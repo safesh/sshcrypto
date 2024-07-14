@@ -1,0 +1,11 @@
+.zig-cache/
+/build-*/
+/build/
+/debug/
+/docgen_tmp/
+/release/
+zig-cache/
+zig-out/
+
+/test/ca
+/test/user
