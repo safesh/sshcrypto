@@ -2,7 +2,10 @@ name: CI
 on: push
 jobs:
   test:
-    runs-on: [ubuntu-latest, windows, macos]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{matrix.os}}
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
