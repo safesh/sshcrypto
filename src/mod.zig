@@ -92,7 +92,7 @@ pub const Cert = struct {
                 1 => {
                     const data = if (self.get_der(raw)) |der| der else raw;
 
-                    self.*.kind = .{
+                    self.kind = .{
                         .dsa = try DSA.from(data, @enumFromInt(i)),
                     };
                 },
@@ -106,7 +106,7 @@ pub const Cert = struct {
                 5 => {
                     const data = if (self.get_der(raw)) |der| der else raw;
 
-                    self.*.kind = .{
+                    self.kind = .{
                         .ed25519 = try ED25519.from(data, @enumFromInt(i)),
                     };
                 },
@@ -151,17 +151,23 @@ pub const CertType = enum(u32) {
     host = 2,
 };
 
-/// The critical options section of the certificate specifies zero or more options on the certificate's validity.
+/// The critical options section of the certificate specifies zero or more
+/// options on the certificate's validity.
 pub const CriticalOptions = enum {
-    /// Specifies a command that is executed (replacing any the user specified on the ssh command-line) whenever this key is used for authentication.
+    /// Specifies a command that is executed (replacing any the user specified
+    /// on the ssh command-line) whenever this key is used for authentication.
     force_command,
 
-    /// Comma-separated list of source addresses from which this certificate is accepted for authentication. Addresses are specified in CIDR format
-    /// (nn.nn.nn.nn/nn or hhhh::hhhh/nn). If this option is not present, then certificates may be presented from any source address.
+    /// Comma-separated list of source addresses from which this certificate is
+    /// accepted for authentication. Addresses are specified in CIDR format
+    /// (nn.nn.nn.nn/nn or hhhh::hhhh/nn). If this option is not present, then
+    /// certificates may be presented from any source address.
     source_address,
 
-    /// Flag indicating that signatures made with this certificate must assert FIDO user verification (e.g. PIN or biometric). This option only makes sense
-    /// for the U2F/FIDO security key types that support this feature in their signature formats.
+    /// Flag indicating that signatures made with this certificate must assert
+    /// FIDO user verification (e.g. PIN or biometric). This option only makes
+    /// sense for the U2F/FIDO security key types that support this feature in
+    /// their signature formats.
     verify_required,
 
     const Self = @This();
@@ -185,9 +191,10 @@ pub const CriticalOptions = enum {
 
         const Self = @This();
 
-        /// Returns the next critical option, or null if done or an invalid option is found.
+        /// Returns the next critical option, or null if done or an invalid
+        /// option is found.
         pub fn next(self: *Iterator.Self) ?CriticalOption {
-            if (self.off == self.buf.len) return null;
+            if (self.done()) return null;
 
             const off, const ret = parse_string(self.buf[self.off..]) catch return null;
 
@@ -199,6 +206,10 @@ pub const CriticalOptions = enum {
         pub fn reset(self: *Iterator.Self) void {
             self.off = 0;
         }
+
+        pub fn done(self: *const Iterator.Self) bool {
+            return self.off == self.buf.len;
+        }
     };
 };
 
@@ -207,25 +218,34 @@ pub const CriticalOption = struct {
     value: []const u8,
 };
 
-/// The extensions section of the certificate specifies zero or more non-critical certificate extensions.
+/// The extensions section of the certificate specifies zero or more
+/// non-critical certificate extensions.
 pub const Extensions = enum(u8) {
-    /// Flag indicating that signatures made with this certificate need not assert FIDO user presence. This option only
-    /// makes sense for the U2F/FIDO security key types that support this feature in their signature formats.
+    /// Flag indicating that signatures made with this certificate need not
+    /// assert FIDO user presence. This option only makes sense for the
+    /// U2F/FIDO security key types that support this feature in their
+    /// signature formats.
     no_touch_required = 0x01 << 0,
 
-    /// Flag indicating that X11 forwarding should be permitted. X11 forwarding will be refused if this option is absent.
+    /// Flag indicating that X11 forwarding should be permitted. X11 forwarding
+    /// will be refused if this option is absent.
     permit_X11_forwarding = 0x01 << 1,
 
-    /// Flag indicating that agent forwarding should be allowed. Agent forwarding must not be permitted unless this option is present.
+    /// Flag indicating that agent forwarding should be allowed. Agent
+    /// forwarding must not be permitted unless this option is present.
     permit_agent_forwarding = 0x01 << 2,
 
-    /// Flag indicating that port-forwarding should be allowed. If this option is not present, then no port forwarding will be allowed.
+    /// Flag indicating that port-forwarding should be allowed. If this option
+    /// is not present, then no port forwarding will be allowed.
     permit_port_forwarding = 0x01 << 3,
 
-    /// Flag indicating that PTY allocation should be permitted. In the absence of this option PTY allocation will be disabled.
+    /// Flag indicating that PTY allocation should be permitted. In the absence
+    /// of this option PTY allocation will be disabled.
     permit_pty = 0x01 << 4,
 
-    /// Flag indicating that execution of ~/.ssh/rc should be permitted. Execution of this script will not be permitted if this option is not present.
+    /// Flag indicating that execution of ~/.ssh/rc should be permitted.
+    /// Execution of this script will not be permitted if this option is not
+    /// present.
     permit_user_rc = 0x01 << 5,
 
     const Self = @This();
@@ -245,9 +265,10 @@ pub const Extensions = enum(u8) {
 
         const Self = @This();
 
-        /// Returns the next extension, or null if done. Does not check if the extensions are valid.
+        /// Returns the next extension, or null if done. Does not check if the
+        /// extensions are valid.
         fn next(self: *Iterator.Self) ?[]const u8 {
-            if (self.off == self.buf.len) return null;
+            if (self.done()) return null;
 
             const off, const ret = parse_string(self.buf[self.off..]) catch return null;
 
@@ -258,6 +279,10 @@ pub const Extensions = enum(u8) {
 
         fn reset(self: *Iterator.Self) void {
             self.off = 0;
+        }
+
+        fn done(self: *const Iterator.Self) bool {
+            return self.off == self.buf.len;
         }
     };
 
@@ -293,7 +318,19 @@ pub const Extensions = enum(u8) {
 };
 
 test "extensions to bitflags" {
-    const data = [_]u8{ 0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23, 112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112, 101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101, 114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112, 101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0, 0 };
+    // zig fmt: off
+    const data = [_]u8{
+        0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102,
+        111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23,
+        112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111,
+        114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112,
+        101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114,
+        119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101,
+        114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112,
+        101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0,
+        0
+    };
+    // zig fmt: on
 
     const e = try Extensions.to_bitflags(&data);
 
