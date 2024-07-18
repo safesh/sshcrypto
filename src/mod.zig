@@ -78,7 +78,7 @@ pub const Cert = struct {
     }
 
     pub fn parse(self: *Self, raw: []const u8) Error!void {
-        for (magic_strings, 0..) |magic, i| {
+        for (Magic.strings, 0..) |magic, i| {
             if (raw.len < magic.len) return error.malformed_certificate;
 
             if (std.mem.eql(u8, raw[0..magic.len], magic)) return switch (i) {
@@ -139,12 +139,12 @@ pub const Magic = enum(u3) {
 
     const Self = @This();
 
-    fn as_string(self: *Self) []const u8 {
-        return magic_strings[@intFromEnum(self)];
+    const strings = enum_to_ssh_str(Magic, "-cert-v01@openssh.com");
+
+    fn as_string(self: *const Self) []const u8 {
+        return strings[@intFromEnum(self.*)];
     }
 };
-
-const magic_strings = enum_to_ssh_str(Magic, "-cert-v01@openssh.com");
 
 pub const CertType = enum(u32) {
     user = 1,
@@ -165,6 +165,12 @@ pub const CriticalOptions = enum {
     verify_required,
 
     const Self = @This();
+
+    pub const strings = enum_to_ssh_str(Self, "");
+
+    pub fn as_string(self: *const Self) []const u8 {
+        return Self.strings[self.*];
+    }
 
     pub fn iter(buf: []const u8) Self.Iterator {
         return Self.Iterator{
@@ -201,8 +207,6 @@ pub const CriticalOption = struct {
     value: []const u8,
 };
 
-const critical_options_strings = enum_to_ssh_str(CriticalOptions, "");
-
 /// The extensions section of the certificate specifies zero or more non-critical certificate extensions.
 pub const Extensions = enum(u8) {
     /// Flag indicating that signatures made with this certificate need not assert FIDO user presence. This option only
@@ -226,6 +230,8 @@ pub const Extensions = enum(u8) {
 
     const Self = @This();
 
+    const strings = enum_to_ssh_str(Self, "");
+
     fn iter(buf: []const u8) Self.Iterator {
         return .{
             .buf = buf,
@@ -239,6 +245,7 @@ pub const Extensions = enum(u8) {
 
         const Self = @This();
 
+        /// Returns the next extension, or null if done. Does not check if the extensions are valid.
         fn next(self: *Iterator.Self) ?[]const u8 {
             if (self.off == self.buf.len) return null;
 
@@ -254,17 +261,18 @@ pub const Extensions = enum(u8) {
         }
     };
 
-    inline fn as_string(self: *Self) []const u8 {
-        return extensions_strings[@intFromEnum(self)];
+    inline fn as_string(self: *const Self) []const u8 {
+        return Self.strings[@intFromEnum(self.*)];
     }
 
+    /// Returns the extensions as bitflags, checking if they are valid.
     fn to_bitflags(buf: []const u8) Error!u8 {
         var ret: u8 = 0;
 
         var it = Self.iter(buf);
 
         outer: while (it.next()) |ext| {
-            for (extensions_strings, 0..) |ext_str, j| {
+            for (Self.strings, 0..) |ext_str, j| {
                 if (std.mem.eql(u8, ext, ext_str)) {
                     const bit: u8 = (@as(u8, 0x01) << @as(u3, @intCast(j)));
 
@@ -283,8 +291,6 @@ pub const Extensions = enum(u8) {
         return ret;
     }
 };
-
-const extensions_strings = enum_to_ssh_str(Extensions, "");
 
 test "extensions to bitflags" {
     const data = [_]u8{ 0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23, 112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112, 101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101, 114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112, 101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0, 0 };
@@ -416,7 +422,7 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
 
     ret.magic = magic;
 
-    var i: usize = magic_strings[@intFromEnum(magic)].len + @sizeOf(u32);
+    var i: usize = Magic.strings[@intFromEnum(magic)].len + @sizeOf(u32);
 
     inline for (std.meta.fields(T)) |f| {
         const next, const val = switch (f.type) {
@@ -524,6 +530,7 @@ test "parse ed25519 cert" {
 
     switch (cert.kind) {
         .ed25519 => |c| {
+            debug("magic = {s}\n", .{c.magic.as_string()});
             debug("critical_options = {s}\n", .{c.valid_principals});
         },
         else => return error.wrong_certificate,
