@@ -3,6 +3,7 @@ const std = @import("std");
 const Decoder = std.base64.standard.Decoder;
 
 const debug = std.debug.print;
+const assert = std.debug.assert;
 
 pub const Error = error{
     fail_to_parse,
@@ -317,6 +318,48 @@ pub const Extensions = enum(u8) {
     }
 };
 
+const Principals = struct {
+    ref: []const u8,
+
+    const Self = @This();
+
+    fn iter(self: *const Self) Self.Iterator {
+        return .{
+            .ref = self.ref,
+            .off = 0,
+        };
+    }
+
+    const Iterator = struct {
+        ref: []const u8,
+        off: usize,
+
+        const Self = @This();
+
+        fn next(self: *Iterator.Self) ?[]const u8 {
+            if (self.done()) return null;
+
+            const off, const ret = parse_string(self.ref[self.off..]) catch return null;
+
+            self.off += off;
+
+            if (!self.done())
+                // TODO: Check if we don't overflow here and that the bytes we skipped are zero
+                self.off += @sizeOf(u32);
+
+            return ret;
+        }
+
+        fn reset(self: *Iterator.Self) void {
+            self.off = 0;
+        }
+
+        fn done(self: *const Iterator.Self) bool {
+            return self.off == self.ref.len;
+        }
+    };
+};
+
 test "extensions to bitflags" {
     // zig fmt: off
     const data = [_]u8{
@@ -358,8 +401,6 @@ test "extensions to bitflags" {
 // const ExtensionsFlags = u8;
 
 pub const RSA = struct {
-    const Self = @This();
-
     magic: Magic,
     nonce: []const u8,
     e: []const u8, // TODO: mpint
@@ -367,7 +408,7 @@ pub const RSA = struct {
     serial: u64,
     kind: CertType,
     key_id: []const u8,
-    valid_principals: []const u8,
+    valid_principals: Principals,
     valid_after: u64,
     valid_before: u64,
     critical_options: []const u8,
@@ -376,14 +417,14 @@ pub const RSA = struct {
     signature_key: []const u8,
     signature: []const u8,
 
+    const Self = @This();
+
     fn from(buf: []const u8, magic: Magic) Error!RSA {
         return try parse(Self, magic, buf);
     }
 };
 
 pub const DSA = struct {
-    const Self = @This();
-
     magic: Magic,
     nonce: []const u8,
     p: []const u8, // TODO: mpint
@@ -393,7 +434,7 @@ pub const DSA = struct {
     serial: u64,
     kind: CertType,
     key_id: []const u8,
-    valid_principals: []const u8,
+    valid_principals: Principals,
     valid_after: []const u8,
     valid_before: []const u8,
     critical_options: []const u8,
@@ -402,22 +443,22 @@ pub const DSA = struct {
     signature_key: []const u8,
     signature: []const u8,
 
+    const Self = @This();
+
     fn from(buf: []const u8, magic: Magic) Error!DSA {
         return try parse(Self, magic, buf);
     }
 };
 
 pub const ECDSA = struct {
-    const Self = @This();
-
     magic: Magic,
     nonce: []const u8,
     curve: []const u8,
     public_key: []const u8,
     serial: u64,
-    type: CertType,
+    kind: CertType,
     key_id: []const u8,
-    valid_principals: []const u8,
+    valid_principals: Principals,
     valid_after: u64,
     valid_before: u64,
     critical_options: []const u8,
@@ -425,6 +466,8 @@ pub const ECDSA = struct {
     reserved: []const u8,
     signature_key: []const u8,
     signature: []const u8,
+
+    const Self = @This();
 
     fn from(buf: []const u8, magic: Magic) Error!ECDSA {
         return try parse(Self, magic, buf);
@@ -432,15 +475,13 @@ pub const ECDSA = struct {
 };
 
 pub const ED25519 = struct {
-    const Self = @This();
-
     magic: Magic,
     nonce: []const u8,
     pk: []const u8,
     serial: u64,
     kind: CertType,
     key_id: []const u8,
-    valid_principals: []const u8,
+    valid_principals: Principals,
     valid_after: u64,
     valid_before: u64,
     critical_options: []const u8,
@@ -448,6 +489,8 @@ pub const ED25519 = struct {
     reserved: []const u8,
     signature_key: []const u8,
     signature: []const u8,
+
+    const Self = @This();
 
     fn from(buf: []const u8, magic: Magic) Error!ED25519 {
         return try parse(ED25519, magic, buf);
@@ -472,6 +515,7 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
             // RFC-4251 uint32
             CertType => blk: {
                 const next, const val = try parse_int(u32, buf[i..]);
+
                 break :blk .{
                     next,
                     @as(CertType, @enumFromInt(val)),
@@ -480,6 +524,15 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
 
             // RFC-4251 string
             // ExtensionsFlags => try parse_extensions(buf[i..]),
+
+            Principals => blk: {
+                const next, const ref = try parse_string(buf[i..]);
+
+                break :blk .{
+                    next,
+                    .{ .ref = ref },
+                };
+            },
 
             // Don't unroll anything else
             else => continue,
@@ -536,7 +589,19 @@ test "parse rsa cert" {
     try cert.parse(@embedFile("test/rsa-cert.pub"));
 
     switch (cert.kind) {
-        .rsa => {},
+        .rsa => |c| {
+            assert(c.magic == Magic.ssh_rsa);
+            assert(c.serial == 2);
+            assert(c.kind == CertType.user);
+            assert(std.mem.eql(u8, c.key_id, "abc"));
+
+            var it = c.valid_principals.iter();
+            assert(std.mem.eql(u8, it.next().?, "root"));
+            assert(it.done());
+
+            assert(c.valid_after == 0);
+            assert(c.valid_before == std.math.maxInt(u64));
+        },
         else => return error.wrong_certificate,
     }
 }
@@ -551,7 +616,19 @@ test "parse ecdsa cert" {
     try cert.parse(@embedFile("test/ecdsa-cert.pub"));
 
     switch (cert.kind) {
-        .ecdsa => {},
+        .ecdsa => |c| {
+            assert(c.magic == Magic.ecdsa_sha2_nistp256);
+            assert(c.serial == 2);
+            assert(c.kind == CertType.user);
+            assert(std.mem.eql(u8, c.key_id, "abc"));
+
+            var it = c.valid_principals.iter();
+            assert(std.mem.eql(u8, it.next().?, "root"));
+            assert(it.done());
+
+            assert(c.valid_after == 0);
+            assert(c.valid_before == std.math.maxInt(u64));
+        },
         else => return error.wrong_certificate,
     }
 }
@@ -567,8 +644,17 @@ test "parse ed25519 cert" {
 
     switch (cert.kind) {
         .ed25519 => |c| {
-            debug("magic = {s}\n", .{c.magic.as_string()});
-            debug("critical_options = {s}\n", .{c.valid_principals});
+            assert(c.magic == Magic.ssh_ed25519);
+            assert(c.serial == 2);
+            assert(c.kind == CertType.user);
+            assert(std.mem.eql(u8, c.key_id, "abc"));
+
+            var it = c.valid_principals.iter();
+            assert(std.mem.eql(u8, it.next().?, "root"));
+            assert(it.done());
+
+            assert(c.valid_after == 0);
+            assert(c.valid_before == std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
     }
