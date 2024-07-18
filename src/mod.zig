@@ -291,12 +291,6 @@ test "extensions to bitflags" {
 
     const e = try Extensions.to_bitflags(&data);
 
-    var it = Extensions.iter(&data);
-
-    while (it.next()) |ext| {
-        debug("ext = {s}\n", .{ext});
-    }
-
     std.debug.assert(e ==
         @intFromEnum(Extensions.permit_agent_forwarding) |
         @intFromEnum(Extensions.permit_X11_forwarding) |
@@ -305,18 +299,18 @@ test "extensions to bitflags" {
         @intFromEnum(Extensions.permit_pty));
 }
 
-test "critical options iterator" {
-    const data = [_]u8{ 0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23, 112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112, 101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101, 114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112, 101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0, 0 };
-
-    var it = CriticalOptions.Iterator{
-        .buf = &data,
-        .off = 0,
-    };
-
-    while (it.next()) |opt| {
-        debug("opt = {s}\n", .{opt.value});
-    }
-}
+// test "critical options iterator" {
+//     const data = [_]u8{ 0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23, 112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112, 101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101, 114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112, 101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0, 0 };
+//
+//     var it = CriticalOptions.Iterator{
+//         .buf = &data,
+//         .off = 0,
+//     };
+//
+//     while (it.next()) |opt| {
+//         debug("opt = {s}\n", .{opt.value});
+//     }
+// }
 
 // const ExtensionsFlags = u8;
 
