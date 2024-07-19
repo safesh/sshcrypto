@@ -1,9 +1,11 @@
 const std = @import("std");
+const meta = std.meta;
 
 const Decoder = std.base64.standard.Decoder;
 
 const debug = std.debug.print;
 const assert = std.debug.assert;
+const memcmp = std.mem.eql;
 
 pub const Error = error{
     fail_to_parse,
@@ -33,16 +35,10 @@ fn GenericIterator(
         pub fn next(self: *Self) T {
             if (self.done()) return null;
 
-            const off, const ret = parse_string(self.ref[self.off..]) catch return null;
+            const off, const ret = parse_string(self.ref[self.off..]) catch
+                return null;
 
             self.off += off;
-
-            // if (is_pair) {
-            //     if (!self.done())
-            //         // TODO: Check if we don't overflow here and that the bytes we
-            //         // skipped are zero
-            //         self.off += @sizeOf(u32);
-            // }
 
             return parse_value(self.ref, &self.off, ret);
         }
@@ -57,11 +53,11 @@ fn GenericIterator(
     };
 }
 
-fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [std.meta.fields(T).len][]const u8 {
+fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [meta.fields(T).len][]const u8 {
     if (@typeInfo(T) != .Enum)
         @compileError("Expected enum");
 
-    const fields = std.meta.fields(T);
+    const fields = meta.fields(T);
 
     comptime var ret: [fields.len][]const u8 = undefined;
 
@@ -123,7 +119,7 @@ pub const Cert = struct {
         for (Magic.strings, 0..) |magic, i| {
             if (raw.len < magic.len) return error.malformed_certificate;
 
-            if (std.mem.eql(u8, raw[0..magic.len], magic)) return switch (i) {
+            if (memcmp(u8, raw[0..magic.len], magic)) return switch (i) {
                 0, 6, 7 => {
                     const data = if (self.get_der(raw)) |der| der else raw;
 
@@ -195,34 +191,38 @@ pub const CertType = enum(u32) {
 
 /// The critical options section of the certificate specifies zero or more
 /// options on the certificate's validity.
-pub const CriticalOptions = enum {
-    /// Specifies a command that is executed (replacing any the user specified
-    /// on the ssh command-line) whenever this key is used for authentication.
-    force_command,
+pub const CriticalOptions = struct {
+    ref: []const u8 = undefined,
 
-    /// Comma-separated list of source addresses from which this certificate is
-    /// accepted for authentication. Addresses are specified in CIDR format
-    /// (nn.nn.nn.nn/nn or hhhh::hhhh/nn). If this option is not present, then
-    /// certificates may be presented from any source address.
-    source_address,
+    const Tag = enum {
+        /// Specifies a command that is executed (replacing any the user specified
+        /// on the ssh command-line) whenever this key is used for authentication.
+        force_command,
 
-    /// Flag indicating that signatures made with this certificate must assert
-    /// FIDO user verification (e.g. PIN or biometric). This option only makes
-    /// sense for the U2F/FIDO security key types that support this feature in
-    /// their signature formats.
-    verify_required,
+        /// Comma-separated list of source addresses from which this certificate is
+        /// accepted for authentication. Addresses are specified in CIDR format
+        /// (nn.nn.nn.nn/nn or hhhh::hhhh/nn). If this option is not present, then
+        /// certificates may be presented from any source address.
+        source_address,
+
+        /// Flag indicating that signatures made with this certificate must assert
+        /// FIDO user verification (e.g. PIN or biometric). This option only makes
+        /// sense for the U2F/FIDO security key types that support this feature in
+        /// their signature formats.
+        verify_required,
+
+        pub const strings = enum_to_ssh_str(Self.Tag, "");
+    };
 
     const Self = @This();
 
-    pub const strings = enum_to_ssh_str(Self, "");
-
     pub fn as_string(self: *const Self) []const u8 {
-        return Self.strings[self.*];
+        return Self.Tag.strings[self.*];
     }
 
-    pub fn iter(ref: []const u8) Self.Iterator {
+    pub fn iter(self: *Self) Self.Iterator {
         return Self.Iterator{
-            .ref = ref,
+            .ref = self.ref,
             .off = 0,
         };
     }
@@ -247,9 +247,9 @@ pub const CriticalOptions = enum {
         }.parse_value,
     );
 
-    inline fn is_option(opt: []const u8) ?CriticalOptions {
-        for (Self.strings, 0..) |s, i| {
-            if (std.mem.eql(u8, s, opt)) return @enumFromInt(i);
+    inline fn is_option(opt: []const u8) ?CriticalOptions.Tag {
+        for (Self.Tag.strings, 0..) |s, i| {
+            if (memcmp(u8, s, opt)) return @enumFromInt(i);
         }
 
         return null;
@@ -257,47 +257,51 @@ pub const CriticalOptions = enum {
 };
 
 pub const CriticalOption = struct {
-    kind: CriticalOptions,
+    kind: CriticalOptions.Tag,
     value: []const u8,
 };
 
 /// The extensions section of the certificate specifies zero or more
 /// non-critical certificate extensions.
-pub const Extensions = enum(u8) {
-    /// Flag indicating that signatures made with this certificate need not
-    /// assert FIDO user presence. This option only makes sense for the
-    /// U2F/FIDO security key types that support this feature in their
-    /// signature formats.
-    no_touch_required = 0x01 << 0,
+pub const Extensions = struct {
+    ref: []const u8 = undefined,
 
-    /// Flag indicating that X11 forwarding should be permitted. X11 forwarding
-    /// will be refused if this option is absent.
-    permit_X11_forwarding = 0x01 << 1,
+    const Tags = enum(u8) {
+        /// Flag indicating that signatures made with this certificate need not
+        /// assert FIDO user presence. This option only makes sense for the
+        /// U2F/FIDO security key types that support this feature in their
+        /// signature formats.
+        no_touch_required = 0x01 << 0,
 
-    /// Flag indicating that agent forwarding should be allowed. Agent
-    /// forwarding must not be permitted unless this option is present.
-    permit_agent_forwarding = 0x01 << 2,
+        /// Flag indicating that X11 forwarding should be permitted. X11 forwarding
+        /// will be refused if this option is absent.
+        permit_X11_forwarding = 0x01 << 1,
 
-    /// Flag indicating that port-forwarding should be allowed. If this option
-    /// is not present, then no port forwarding will be allowed.
-    permit_port_forwarding = 0x01 << 3,
+        /// Flag indicating that agent forwarding should be allowed. Agent
+        /// forwarding must not be permitted unless this option is present.
+        permit_agent_forwarding = 0x01 << 2,
 
-    /// Flag indicating that PTY allocation should be permitted. In the absence
-    /// of this option PTY allocation will be disabled.
-    permit_pty = 0x01 << 4,
+        /// Flag indicating that port-forwarding should be allowed. If this option
+        /// is not present, then no port forwarding will be allowed.
+        permit_port_forwarding = 0x01 << 3,
 
-    /// Flag indicating that execution of ~/.ssh/rc should be permitted.
-    /// Execution of this script will not be permitted if this option is not
-    /// present.
-    permit_user_rc = 0x01 << 5,
+        /// Flag indicating that PTY allocation should be permitted. In the absence
+        /// of this option PTY allocation will be disabled.
+        permit_pty = 0x01 << 4,
+
+        /// Flag indicating that execution of ~/.ssh/rc should be permitted.
+        /// Execution of this script will not be permitted if this option is not
+        /// present.
+        permit_user_rc = 0x01 << 5,
+
+        const strings = enum_to_ssh_str(Self.Tags, "");
+    };
 
     const Self = @This();
 
-    const strings = enum_to_ssh_str(Self, "");
-
-    fn iter(ref: []const u8) Self.Iterator {
+    fn iter(self: Self) Self.Iterator {
         return .{
-            .ref = ref,
+            .ref = self.ref,
             .off = 0,
         };
     }
@@ -305,8 +309,6 @@ pub const Extensions = enum(u8) {
     const Iterator = GenericIterator(
         struct {
             inline fn parse_value(ref: []const u8, off: *usize, key: []const u8) ?[]const u8 {
-                debug("key = {s}\n", .{key});
-
                 // Skip empty pair
                 if (ref.len != off.*) off.* += @sizeOf(u32);
 
@@ -320,14 +322,14 @@ pub const Extensions = enum(u8) {
     }
 
     /// Returns the extensions as bitflags, checking if they are valid.
-    fn to_bitflags(buf: []const u8) Error!u8 {
+    fn to_bitflags(self: *Self) Error!u8 {
         var ret: u8 = 0;
 
-        var it = Self.iter(buf);
+        var it = self.iter();
 
         outer: while (it.next()) |ext| {
-            for (Self.strings, 0..) |ext_str, j| {
-                if (std.mem.eql(u8, ext, ext_str)) {
+            for (Self.Tags.strings, 0..) |ext_str, j| {
+                if (memcmp(u8, ext, ext_str)) {
                     const bit: u8 = (@as(u8, 0x01) << @as(u3, @intCast(j)));
 
                     if (ret & bit != 0)
@@ -367,31 +369,6 @@ const Principals = struct {
     );
 };
 
-test "extensions to bitflags" {
-    // zig fmt: off
-    const data = [_]u8{
-        0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102,
-        111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23,
-        112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111,
-        114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112,
-        101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114,
-        119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101,
-        114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112,
-        101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0,
-        0
-    };
-    // zig fmt: on
-
-    const e = try Extensions.to_bitflags(&data);
-
-    std.debug.assert(e ==
-        @intFromEnum(Extensions.permit_agent_forwarding) |
-        @intFromEnum(Extensions.permit_X11_forwarding) |
-        @intFromEnum(Extensions.permit_user_rc) |
-        @intFromEnum(Extensions.permit_port_forwarding) |
-        @intFromEnum(Extensions.permit_pty));
-}
-
 pub const RSA = struct {
     magic: Magic,
     nonce: []const u8,
@@ -403,8 +380,8 @@ pub const RSA = struct {
     valid_principals: Principals,
     valid_after: u64,
     valid_before: u64,
-    critical_options: []const u8,
-    extensions: []const u8,
+    critical_options: CriticalOptions,
+    extensions: Extensions,
     reserved: []const u8,
     signature_key: []const u8,
     signature: []const u8,
@@ -429,8 +406,8 @@ pub const DSA = struct {
     valid_principals: Principals,
     valid_after: []const u8,
     valid_before: []const u8,
-    critical_options: []const u8,
-    extensions: []const u8,
+    critical_options: CriticalOptions,
+    extensions: Extensions,
     reserved: []const u8,
     signature_key: []const u8,
     signature: []const u8,
@@ -453,8 +430,8 @@ pub const ECDSA = struct {
     valid_principals: Principals,
     valid_after: u64,
     valid_before: u64,
-    critical_options: []const u8,
-    extensions: []const u8,
+    critical_options: CriticalOptions,
+    extensions: Extensions,
     reserved: []const u8,
     signature_key: []const u8,
     signature: []const u8,
@@ -489,6 +466,30 @@ pub const ED25519 = struct {
     }
 };
 
+inline fn parse_cert_type(ref: []const u8) Error!struct { usize, CertType } {
+    const next, const val = try parse_int(u32, ref);
+
+    return .{ next, @enumFromInt(val) };
+}
+
+inline fn parse_critical_options(buf: []const u8) Error!struct { usize, CriticalOptions } {
+    const next, const ref = try parse_string(buf);
+
+    return .{ next, .{ .ref = ref } };
+}
+
+inline fn parse_principals(buf: []const u8) Error!struct { usize, Principals } {
+    const next, const ref = try parse_string(buf);
+
+    return .{ next, .{ .ref = ref } };
+}
+
+inline fn parse_extensions(buf: []const u8) Error!struct { usize, Extensions } {
+    const next, const ref = try parse_string(buf);
+
+    return .{ next, .{ .ref = ref } };
+}
+
 inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
     var ret: T = undefined;
 
@@ -496,35 +497,27 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
 
     var i: usize = Magic.strings[@intFromEnum(magic)].len + @sizeOf(u32);
 
-    inline for (std.meta.fields(T)) |f| {
+    inline for (meta.fields(T)) |f| {
+        const ref = buf[i..];
+
         const next, const val = switch (f.type) {
             // RFC-4251 string
-            []const u8 => try parse_string(buf[i..]),
+            []const u8 => try parse_string(ref),
 
             // RFC-4251 uint64
-            u64 => try parse_int(u64, buf[i..]),
+            u64 => try parse_int(u64, ref),
 
             // RFC-4251 uint32
-            CertType => blk: {
-                const next, const val = try parse_int(u32, buf[i..]);
-
-                break :blk .{
-                    next,
-                    @as(CertType, @enumFromInt(val)),
-                };
-            },
+            CertType => try parse_cert_type(ref),
 
             // RFC-4251 string
-            // ExtensionsFlags => try parse_extensions(buf[i..]),
+            CriticalOptions => try parse_critical_options(ref),
 
-            Principals => blk: {
-                const next, const ref = try parse_string(buf[i..]);
+            // RFC-4251 string
+            Principals => try parse_principals(ref),
 
-                break :blk .{
-                    next,
-                    .{ .ref = ref },
-                };
-            },
+            // RFC-4251 string
+            Extensions => try parse_extensions(ref),
 
             // Don't unroll anything else
             else => continue,
@@ -579,10 +572,10 @@ test "test parse rsa cert" {
             assert(c.magic == Magic.ssh_rsa);
             assert(c.serial == 2);
             assert(c.kind == CertType.user);
-            assert(std.mem.eql(u8, c.key_id, "abc"));
+            assert(memcmp(u8, c.key_id, "abc"));
 
             var it = c.valid_principals.iter();
-            assert(std.mem.eql(u8, it.next().?, "root"));
+            assert(memcmp(u8, it.next().?, "root"));
             assert(it.done());
 
             assert(c.valid_after == 0);
@@ -606,10 +599,10 @@ test "test parse ecdsa cert" {
             assert(c.magic == Magic.ecdsa_sha2_nistp256);
             assert(c.serial == 2);
             assert(c.kind == CertType.user);
-            assert(std.mem.eql(u8, c.key_id, "abc"));
+            assert(memcmp(u8, c.key_id, "abc"));
 
             var it = c.valid_principals.iter();
-            assert(std.mem.eql(u8, it.next().?, "root"));
+            assert(memcmp(u8, it.next().?, "root"));
             assert(it.done());
 
             assert(c.valid_after == 0);
@@ -633,10 +626,10 @@ test "test parse ed25519 cert" {
             assert(c.magic == Magic.ssh_ed25519);
             assert(c.serial == 2);
             assert(c.kind == CertType.user);
-            assert(std.mem.eql(u8, c.key_id, "abc"));
+            assert(memcmp(u8, c.key_id, "abc"));
 
             var it = c.valid_principals.iter();
-            assert(std.mem.eql(u8, it.next().?, "root"));
+            assert(memcmp(u8, it.next().?, "root"));
 
             assert(it.done());
 
@@ -664,13 +657,34 @@ test "test extensions iterator" {
 
     try cert.parse(@embedFile("test/rsa-cert.pub"));
 
-    var it = Extensions.iter(cert.kind.rsa.extensions);
+    var it = cert.kind.rsa.extensions.iter();
 
     for (extensions) |extension| {
-        assert(std.mem.eql(u8, extension, it.next().?));
+        assert(memcmp(u8, extension, it.next().?));
     }
 
     assert(it.done());
+}
+
+test "test extensions to bitflags" {
+    const Ext = Extensions.Tags;
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var cert = Cert.init(gpa.allocator());
+    defer cert.deinit();
+
+    try cert.parse(@embedFile("test/rsa-cert.pub"));
+
+    assert(
+        try cert.kind.rsa.extensions.to_bitflags() ==
+            @intFromEnum(Ext.permit_agent_forwarding) |
+            @intFromEnum(Ext.permit_X11_forwarding) |
+            @intFromEnum(Ext.permit_user_rc) |
+            @intFromEnum(Ext.permit_port_forwarding) |
+            @intFromEnum(Ext.permit_pty),
+    );
 }
 
 test "test multiple valid principals iterator" {
@@ -687,7 +701,7 @@ test "test multiple valid principals iterator" {
     var it = cert.kind.rsa.valid_principals.iter();
 
     for (valid_principals) |principal| {
-        assert(std.mem.eql(u8, principal, it.next().?));
+        assert(memcmp(u8, principal, it.next().?));
     }
 }
 
@@ -705,13 +719,13 @@ test "test critical options iterator" {
         .value = "ls -la",
     }};
 
-    var it = CriticalOptions.iter(cert.kind.rsa.critical_options);
+    var it = cert.kind.rsa.critical_options.iter();
 
     for (critical_options) |critical_option| {
         const opt = it.next().?;
 
         assert(critical_option.kind == opt.kind);
-        assert(std.mem.eql(u8, critical_option.value, opt.value));
+        assert(memcmp(u8, critical_option.value, opt.value));
     }
 
     assert(it.done());
@@ -726,10 +740,24 @@ test "test multiple critical options iterator" {
 
     try cert.parse(@embedFile("test/multiple-critical-options-cert.pub"));
 
-    var it = CriticalOptions.iter(cert.kind.rsa.critical_options);
+    const critical_options = [_]CriticalOption{
+        .{
+            .kind = .force_command,
+            .value = "ls -la",
+        },
+        .{
+            .kind = .source_address,
+            .value = "198.51.100.0/24,203.0.113.0/26",
+        },
+    };
 
-    while (it.next()) |option| {
-        debug("value = {s}\n", .{option.value});
+    var it = cert.kind.rsa.critical_options.iter();
+
+    for (critical_options) |critical_option| {
+        const opt = it.next().?;
+
+        assert(critical_option.kind == opt.kind);
+        assert(memcmp(u8, critical_option.value, opt.value));
     }
 
     assert(it.done());
