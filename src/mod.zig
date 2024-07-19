@@ -560,6 +560,8 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
     return ret;
 }
 
+const Timer = std.time.Timer;
+
 test "test parse rsa cert" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -567,7 +569,11 @@ test "test parse rsa cert" {
     var cert = Cert.init(gpa.allocator());
     defer cert.deinit();
 
+    var timer = try Timer.start();
+
     try cert.parse(@embedFile("test/rsa-cert.pub"));
+
+    debug("rsa cert took = {}ns\n", .{timer.read()});
 
     switch (cert.kind) {
         .rsa => |c| {
@@ -594,7 +600,11 @@ test "test parse ecdsa cert" {
     var cert = Cert.init(gpa.allocator());
     defer cert.deinit();
 
+    var timer = try Timer.start();
+
     try cert.parse(@embedFile("test/ecdsa-cert.pub"));
+
+    debug("ecdsa cert took = {}ns\n", .{timer.read()});
 
     switch (cert.kind) {
         .ecdsa => |c| {
@@ -621,7 +631,11 @@ test "test parse ed25519 cert" {
     var cert = Cert.init(gpa.allocator());
     defer cert.deinit();
 
+    var timer = try Timer.start();
+
     try cert.parse(@embedFile("test/ed25519-cert.pub"));
+
+    debug("ed25519 cert took = {}ns\n", .{timer.read()});
 
     switch (cert.kind) {
         .ed25519 => |c| {
