@@ -1,5 +1,5 @@
 .{
-    .name = "ssh-certs",
+    .name = "sshcerts",
     .version = "0.0.1",
     .minimum_zig_version = "0.13.0",
     .dependencies = .{},
@@ -7,7 +7,6 @@
         "build.zig",
         "build.zig.zon",
         "src",
-        "test",
         // For example...
         //"LICENSE",
         //"README.md",
