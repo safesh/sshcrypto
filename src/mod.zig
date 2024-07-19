@@ -17,10 +17,9 @@ pub const Error = error{
 };
 
 fn GenericIterator(
-    comptime null_terminated: bool,
-    comptime cb: anytype,
+    comptime parse_value: anytype,
 ) type {
-    const T = switch (@typeInfo(@TypeOf(cb))) {
+    const T = switch (@typeInfo(@TypeOf(parse_value))) {
         .Fn => |func| func.return_type.?,
         else => @compileError("Expected Fn"),
     };
@@ -38,14 +37,14 @@ fn GenericIterator(
 
             self.off += off;
 
-            if (null_terminated) {
-                if (!self.done())
-                    // TODO: Check if we don't overflow here and that the bytes we
-                    // skipped are zero
-                    self.off += @sizeOf(u32);
-            }
+            // if (is_pair) {
+            //     if (!self.done())
+            //         // TODO: Check if we don't overflow here and that the bytes we
+            //         // skipped are zero
+            //         self.off += @sizeOf(u32);
+            // }
 
-            return cb(ret);
+            return parse_value(self.ref, &self.off, ret);
         }
 
         pub fn reset(self: *Self) void {
@@ -221,21 +220,40 @@ pub const CriticalOptions = enum {
         return Self.strings[self.*];
     }
 
-    pub fn iter(buf: []const u8) Self.Iterator {
+    pub fn iter(ref: []const u8) Self.Iterator {
         return Self.Iterator{
-            .buf = buf,
+            .ref = ref,
             .off = 0,
         };
     }
 
     pub const Iterator = GenericIterator(
-        true,
         struct {
-            inline fn id(in: []const u8) ?[]const u8 {
-                return in;
+            // FIXME: Should return an error
+            inline fn parse_value(ref: []const u8, off: *usize, key: []const u8) ?CriticalOption {
+                const opt = Self.is_option(key) orelse
+                    return null;
+
+                const next, const buf = parse_string(ref[off.*..]) catch
+                    return null;
+
+                _, const value = parse_string(buf) catch
+                    return null;
+
+                off.* += next;
+
+                return .{ .kind = opt, .value = value };
             }
-        }.id,
+        }.parse_value,
     );
+
+    inline fn is_option(opt: []const u8) ?CriticalOptions {
+        for (Self.strings, 0..) |s, i| {
+            if (std.mem.eql(u8, s, opt)) return @enumFromInt(i);
+        }
+
+        return null;
+    }
 };
 
 pub const CriticalOption = struct {
@@ -285,12 +303,16 @@ pub const Extensions = enum(u8) {
     }
 
     const Iterator = GenericIterator(
-        true,
         struct {
-            inline fn id(in: []const u8) ?[]const u8 {
-                return in;
+            inline fn parse_value(ref: []const u8, off: *usize, key: []const u8) ?[]const u8 {
+                debug("key = {s}\n", .{key});
+
+                // Skip empty pair
+                if (ref.len != off.*) off.* += @sizeOf(u32);
+
+                return key;
             }
-        }.id,
+        }.parse_value,
     );
 
     inline fn as_string(self: *const Self) []const u8 {
@@ -337,12 +359,11 @@ const Principals = struct {
     }
 
     const Iterator = GenericIterator(
-        false, // For some reason, valid principals are not null terminated
         struct {
-            inline fn id(in: []const u8) ?[]const u8 {
-                return in;
+            inline fn parse_value(_: []const u8, _: *usize, key: []const u8) ?[]const u8 {
+                return key;
             }
-        }.id,
+        }.parse_value,
     );
 };
 
@@ -370,21 +391,6 @@ test "extensions to bitflags" {
         @intFromEnum(Extensions.permit_port_forwarding) |
         @intFromEnum(Extensions.permit_pty));
 }
-
-test "critical options iterator" {
-    const data = [_]u8{ 0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23, 112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112, 101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101, 114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112, 101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0, 0 };
-
-    var it = CriticalOptions.Iterator{
-        .ref = &data,
-        .off = 0,
-    };
-
-    while (it.next()) |opt| {
-        debug("opt = {s}\n", .{opt});
-    }
-}
-
-// const ExtensionsFlags = u8;
 
 pub const RSA = struct {
     magic: Magic,
@@ -559,13 +565,7 @@ inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
     return Error.malformed_string;
 }
 
-// inline fn parse_extensions(buf: []const u8) Error!struct { usize, u8 } {
-//     const next, const str = try parse_string(buf);
-//
-//     return .{ next, try Extensions.as_bitflags(str) };
-// }
-
-test "parse rsa cert" {
+test "test parse rsa cert" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -592,7 +592,7 @@ test "parse rsa cert" {
     }
 }
 
-test "parse ecdsa cert" {
+test "test parse ecdsa cert" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -619,7 +619,7 @@ test "parse ecdsa cert" {
     }
 }
 
-test "parse ed25519 cert" {
+test "test parse ed25519 cert" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -647,7 +647,33 @@ test "parse ed25519 cert" {
     }
 }
 
-test "certificate with multiple valid principals" {
+test "test extensions iterator" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var cert = Cert.init(gpa.allocator());
+    defer cert.deinit();
+
+    const extensions = [_][]const u8{
+        "permit-X11-forwarding",
+        "permit-agent-forwarding",
+        "permit-port-forwarding",
+        "permit-pty",
+        "permit-user-rc",
+    };
+
+    try cert.parse(@embedFile("test/rsa-cert.pub"));
+
+    var it = Extensions.iter(cert.kind.rsa.extensions);
+
+    for (extensions) |extension| {
+        assert(std.mem.eql(u8, extension, it.next().?));
+    }
+
+    assert(it.done());
+}
+
+test "test multiple valid principals iterator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -663,4 +689,48 @@ test "certificate with multiple valid principals" {
     for (valid_principals) |principal| {
         assert(std.mem.eql(u8, principal, it.next().?));
     }
+}
+
+test "test critical options iterator" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var cert = Cert.init(gpa.allocator());
+    defer cert.deinit();
+
+    try cert.parse(@embedFile("test/force-command-cert.pub"));
+
+    const critical_options = [_]CriticalOption{.{
+        .kind = .force_command,
+        .value = "ls -la",
+    }};
+
+    var it = CriticalOptions.iter(cert.kind.rsa.critical_options);
+
+    for (critical_options) |critical_option| {
+        const opt = it.next().?;
+
+        assert(critical_option.kind == opt.kind);
+        assert(std.mem.eql(u8, critical_option.value, opt.value));
+    }
+
+    assert(it.done());
+}
+
+test "test multiple critical options iterator" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var cert = Cert.init(gpa.allocator());
+    defer cert.deinit();
+
+    try cert.parse(@embedFile("test/multiple-critical-options-cert.pub"));
+
+    var it = CriticalOptions.iter(cert.kind.rsa.critical_options);
+
+    while (it.next()) |option| {
+        debug("value = {s}\n", .{option.value});
+    }
+
+    assert(it.done());
 }
