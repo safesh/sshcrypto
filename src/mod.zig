@@ -18,14 +18,7 @@ pub const Error = error{
     unkown_extension,
 };
 
-fn GenericIterator(
-    comptime parse_value: anytype,
-) type {
-    const T = switch (@typeInfo(@TypeOf(parse_value))) {
-        .Fn => |func| func.return_type.?,
-        else => @compileError("Expected Fn"),
-    };
-
+fn GenericIteratorInner(comptime T: type, parse_value: anytype) type {
     return struct {
         ref: []const u8,
         off: usize,
@@ -51,6 +44,17 @@ fn GenericIterator(
             return self.off == self.ref.len;
         }
     };
+}
+
+fn GenericIterator(
+    comptime parse_value: anytype,
+) type {
+    const T = switch (@typeInfo(@TypeOf(parse_value))) {
+        .Fn => |func| func.return_type.?,
+        else => @compileError("Expected Fn"),
+    };
+
+    return GenericIteratorInner(T, parse_value);
 }
 
 fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [meta.fields(T).len][]const u8 {
