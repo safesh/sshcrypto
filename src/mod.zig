@@ -16,6 +16,45 @@ pub const Error = error{
     unkown_extension,
 };
 
+fn GenericIterator(
+    comptime cb: anytype,
+) type {
+    const T = switch (@typeInfo(@TypeOf(cb))) {
+        .Fn => |func| func.return_type.?,
+        else => @compileError("Expected Fn"),
+    };
+
+    return struct {
+        ref: []const u8,
+        off: usize,
+
+        const Self = @This();
+
+        pub fn next(self: *Self) T {
+            if (self.done()) return null;
+
+            const off, const ret = parse_string(self.ref[self.off..]) catch return null;
+
+            self.off += off;
+
+            if (!self.done())
+                // TODO: Check if we don't overflow here and that the bytes we
+                // skipped are zero
+                self.off += @sizeOf(u32);
+
+            return cb(ret);
+        }
+
+        pub fn reset(self: *Self) void {
+            self.off = 0;
+        }
+
+        pub fn done(self: *const Self) bool {
+            return self.off == self.ref.len;
+        }
+    };
+}
+
 fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [std.meta.fields(T).len][]const u8 {
     if (@typeInfo(T) != .Enum)
         @compileError("Expected enum");
@@ -186,32 +225,13 @@ pub const CriticalOptions = enum {
         };
     }
 
-    pub const Iterator = struct {
-        buf: []const u8,
-        off: usize,
-
-        const Self = @This();
-
-        /// Returns the next critical option, or null if done or an invalid
-        /// option is found.
-        pub fn next(self: *Iterator.Self) ?CriticalOption {
-            if (self.done()) return null;
-
-            const off, const ret = parse_string(self.buf[self.off..]) catch return null;
-
-            self.off += off + @sizeOf(u32);
-
-            return .{ .value = ret, .kind = CriticalOptions.force_command };
-        }
-
-        pub fn reset(self: *Iterator.Self) void {
-            self.off = 0;
-        }
-
-        pub fn done(self: *const Iterator.Self) bool {
-            return self.off == self.buf.len;
-        }
-    };
+    pub const Iterator = GenericIterator(
+        struct {
+            inline fn id(in: []const u8) ?[]const u8 {
+                return in;
+            }
+        }.id,
+    );
 };
 
 pub const CriticalOption = struct {
@@ -253,39 +273,20 @@ pub const Extensions = enum(u8) {
 
     const strings = enum_to_ssh_str(Self, "");
 
-    fn iter(buf: []const u8) Self.Iterator {
+    fn iter(ref: []const u8) Self.Iterator {
         return .{
-            .buf = buf,
+            .ref = ref,
             .off = 0,
         };
     }
 
-    const Iterator = struct {
-        buf: []const u8,
-        off: usize,
-
-        const Self = @This();
-
-        /// Returns the next extension, or null if done. Does not check if the
-        /// extensions are valid.
-        fn next(self: *Iterator.Self) ?[]const u8 {
-            if (self.done()) return null;
-
-            const off, const ret = parse_string(self.buf[self.off..]) catch return null;
-
-            self.off += off + @sizeOf(u32);
-
-            return ret;
-        }
-
-        fn reset(self: *Iterator.Self) void {
-            self.off = 0;
-        }
-
-        fn done(self: *const Iterator.Self) bool {
-            return self.off == self.buf.len;
-        }
-    };
+    const Iterator = GenericIterator(
+        struct {
+            inline fn id(in: []const u8) ?[]const u8 {
+                return in;
+            }
+        }.id,
+    );
 
     inline fn as_string(self: *const Self) []const u8 {
         return Self.strings[@intFromEnum(self.*)];
@@ -330,34 +331,13 @@ const Principals = struct {
         };
     }
 
-    const Iterator = struct {
-        ref: []const u8,
-        off: usize,
-
-        const Self = @This();
-
-        fn next(self: *Iterator.Self) ?[]const u8 {
-            if (self.done()) return null;
-
-            const off, const ret = parse_string(self.ref[self.off..]) catch return null;
-
-            self.off += off;
-
-            if (!self.done())
-                // TODO: Check if we don't overflow here and that the bytes we skipped are zero
-                self.off += @sizeOf(u32);
-
-            return ret;
-        }
-
-        fn reset(self: *Iterator.Self) void {
-            self.off = 0;
-        }
-
-        fn done(self: *const Iterator.Self) bool {
-            return self.off == self.ref.len;
-        }
-    };
+    const Iterator = GenericIterator(
+        struct {
+            inline fn id(in: []const u8) ?[]const u8 {
+                return in;
+            }
+        }.id,
+    );
 };
 
 test "extensions to bitflags" {
@@ -385,18 +365,18 @@ test "extensions to bitflags" {
         @intFromEnum(Extensions.permit_pty));
 }
 
-// test "critical options iterator" {
-//     const data = [_]u8{ 0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23, 112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112, 101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101, 114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112, 101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0, 0 };
-//
-//     var it = CriticalOptions.Iterator{
-//         .buf = &data,
-//         .off = 0,
-//     };
-//
-//     while (it.next()) |opt| {
-//         debug("opt = {s}\n", .{opt.value});
-//     }
-// }
+test "critical options iterator" {
+    const data = [_]u8{ 0, 0, 0, 21, 112, 101, 114, 109, 105, 116, 45, 88, 49, 49, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 23, 112, 101, 114, 109, 105, 116, 45, 97, 103, 101, 110, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 22, 112, 101, 114, 109, 105, 116, 45, 112, 111, 114, 116, 45, 102, 111, 114, 119, 97, 114, 100, 105, 110, 103, 0, 0, 0, 0, 0, 0, 0, 10, 112, 101, 114, 109, 105, 116, 45, 112, 116, 121, 0, 0, 0, 0, 0, 0, 0, 14, 112, 101, 114, 109, 105, 116, 45, 117, 115, 101, 114, 45, 114, 99, 0, 0, 0, 0 };
+
+    var it = CriticalOptions.Iterator{
+        .ref = &data,
+        .off = 0,
+    };
+
+    while (it.next()) |opt| {
+        debug("opt = {s}\n", .{opt});
+    }
+}
 
 // const ExtensionsFlags = u8;
 
@@ -651,6 +631,7 @@ test "parse ed25519 cert" {
 
             var it = c.valid_principals.iter();
             assert(std.mem.eql(u8, it.next().?, "root"));
+
             assert(it.done());
 
             assert(c.valid_after == 0);
