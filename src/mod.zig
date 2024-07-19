@@ -46,12 +46,10 @@ fn GenericIteratorInner(comptime T: type, parse_value: anytype) type {
     };
 }
 
-fn GenericIterator(
-    comptime parse_value: anytype,
-) type {
+fn GenericIterator(comptime parse_value: anytype) type {
     const T = switch (@typeInfo(@TypeOf(parse_value))) {
         .Fn => |func| func.return_type.?,
-        else => @compileError("Expected Fn"),
+        else => @compileError("Expected fn"),
     };
 
     return GenericIteratorInner(T, parse_value);
@@ -198,6 +196,8 @@ pub const CertType = enum(u32) {
 pub const CriticalOptions = struct {
     ref: []const u8 = undefined,
 
+    const Self = @This();
+
     const Tag = enum {
         /// Specifies a command that is executed (replacing any the user specified
         /// on the ssh command-line) whenever this key is used for authentication.
@@ -216,13 +216,11 @@ pub const CriticalOptions = struct {
         verify_required,
 
         pub const strings = enum_to_ssh_str(Self.Tag, "");
+
+        pub fn as_string(self: *const Self.Tag) []const u8 {
+            return Self.Tag.strings[self.*];
+        }
     };
-
-    const Self = @This();
-
-    pub fn as_string(self: *const Self) []const u8 {
-        return Self.Tag.strings[self.*];
-    }
 
     pub fn iter(self: *Self) Self.Iterator {
         return Self.Iterator{
@@ -235,7 +233,7 @@ pub const CriticalOptions = struct {
         struct {
             // FIXME: Should return an error
             inline fn parse_value(ref: []const u8, off: *usize, key: []const u8) ?CriticalOption {
-                const opt = Self.is_option(key) orelse
+                const opt = Self.is_valid_option(key) orelse
                     return null;
 
                 const next, const buf = parse_string(ref[off.*..]) catch
@@ -251,7 +249,7 @@ pub const CriticalOptions = struct {
         }.parse_value,
     );
 
-    inline fn is_option(opt: []const u8) ?CriticalOptions.Tag {
+    inline fn is_valid_option(opt: []const u8) ?CriticalOptions.Tag {
         for (Self.Tag.strings, 0..) |s, i| {
             if (memcmp(u8, s, opt)) return @enumFromInt(i);
         }
@@ -269,6 +267,8 @@ pub const CriticalOption = struct {
 /// non-critical certificate extensions.
 pub const Extensions = struct {
     ref: []const u8 = undefined,
+
+    const Self = @This();
 
     const Tags = enum(u8) {
         /// Flag indicating that signatures made with this certificate need not
@@ -299,9 +299,11 @@ pub const Extensions = struct {
         permit_user_rc = 0x01 << 5,
 
         const strings = enum_to_ssh_str(Self.Tags, "");
-    };
 
-    const Self = @This();
+        inline fn as_string(self: *const Self.Tags) []const u8 {
+            return Self.strings[@intFromEnum(self.*)];
+        }
+    };
 
     fn iter(self: Self) Self.Iterator {
         return .{
@@ -320,10 +322,6 @@ pub const Extensions = struct {
             }
         }.parse_value,
     );
-
-    inline fn as_string(self: *const Self) []const u8 {
-        return Self.strings[@intFromEnum(self.*)];
-    }
 
     /// Returns the extensions as bitflags, checking if they are valid.
     fn to_bitflags(self: *Self) Error!u8 {
@@ -470,6 +468,33 @@ pub const ED25519 = struct {
     }
 };
 
+inline fn read_int(comptime T: type, buf: []const u8) ?T {
+    if (buf.len < @sizeOf(T))
+        return null;
+
+    return std.mem.readInt(T, buf[0..@sizeOf(T)], std.builtin.Endian.big);
+}
+
+inline fn parse_int(comptime T: type, buf: []const u8) Error!struct { usize, T } {
+    if (read_int(T, buf)) |n|
+        return .{ @sizeOf(T), n };
+
+    return Error.malformed_integer;
+}
+
+inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
+    if (read_int(u32, buf)) |len| {
+        const size = len + @sizeOf(u32);
+
+        if (size > buf.len)
+            return Error.malformed_string;
+
+        return .{ size, buf[@sizeOf(u32)..size] };
+    }
+
+    return Error.malformed_string;
+}
+
 inline fn parse_cert_type(ref: []const u8) Error!struct { usize, CertType } {
     const next, const val = try parse_int(u32, ref);
 
@@ -533,33 +558,6 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
     }
 
     return ret;
-}
-
-inline fn read_int(comptime T: type, buf: []const u8) ?T {
-    if (buf.len < @sizeOf(T))
-        return null;
-
-    return std.mem.readInt(T, buf[0..@sizeOf(T)], std.builtin.Endian.big);
-}
-
-inline fn parse_int(comptime T: type, buf: []const u8) Error!struct { usize, T } {
-    if (read_int(T, buf)) |n|
-        return .{ @sizeOf(T), n };
-
-    return Error.malformed_integer;
-}
-
-inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
-    if (read_int(u32, buf)) |len| {
-        const size = len + @sizeOf(u32);
-
-        if (size > buf.len)
-            return Error.malformed_string;
-
-        return .{ size, buf[@sizeOf(u32)..size] };
-    }
-
-    return Error.malformed_string;
 }
 
 test "test parse rsa cert" {
