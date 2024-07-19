@@ -17,6 +17,7 @@ pub const Error = error{
 };
 
 fn GenericIterator(
+    comptime null_terminated: bool,
     comptime cb: anytype,
 ) type {
     const T = switch (@typeInfo(@TypeOf(cb))) {
@@ -37,10 +38,12 @@ fn GenericIterator(
 
             self.off += off;
 
-            if (!self.done())
-                // TODO: Check if we don't overflow here and that the bytes we
-                // skipped are zero
-                self.off += @sizeOf(u32);
+            if (null_terminated) {
+                if (!self.done())
+                    // TODO: Check if we don't overflow here and that the bytes we
+                    // skipped are zero
+                    self.off += @sizeOf(u32);
+            }
 
             return cb(ret);
         }
@@ -226,6 +229,7 @@ pub const CriticalOptions = enum {
     }
 
     pub const Iterator = GenericIterator(
+        true,
         struct {
             inline fn id(in: []const u8) ?[]const u8 {
                 return in;
@@ -281,6 +285,7 @@ pub const Extensions = enum(u8) {
     }
 
     const Iterator = GenericIterator(
+        true,
         struct {
             inline fn id(in: []const u8) ?[]const u8 {
                 return in;
@@ -332,6 +337,7 @@ const Principals = struct {
     }
 
     const Iterator = GenericIterator(
+        false, // For some reason, valid principals are not null terminated
         struct {
             inline fn id(in: []const u8) ?[]const u8 {
                 return in;
@@ -638,5 +644,23 @@ test "parse ed25519 cert" {
             assert(c.valid_before == std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
+    }
+}
+
+test "certificate with multiple valid principals" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var cert = Cert.init(gpa.allocator());
+    defer cert.deinit();
+
+    const valid_principals = [_][]const u8{ "foo", "bar", "baz" };
+
+    try cert.parse(@embedFile("test/multiple-principals-cert.pub"));
+
+    var it = cert.kind.rsa.valid_principals.iter();
+
+    for (valid_principals) |principal| {
+        assert(std.mem.eql(u8, principal, it.next().?));
     }
 }
