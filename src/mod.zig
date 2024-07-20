@@ -10,22 +10,16 @@ const assert = std.debug.assert;
 const memcmp = std.mem.eql;
 
 pub const Error = error{
-    CorruptedPemFormat,
-    FailToParse,
-    InvalidCharacter,
+    InvalidFileFormat,
     InvalidMagicString,
-    InvalidPadding,
-    MalformedCertificate,
     /// Invalid RFC-4251 integer
     MalformedInteger,
     /// Invalid RFC-4251 string
     MalformedString,
-    NoSpaceLeft,
-    OutOfMemory,
     /// As per spec, repeated extension are not allowed.
     RepeatedExtension,
     UnkownExtension,
-};
+} || std.base64.Error || Allocator.Error;
 
 fn GenericIteratorInner(comptime T: type, parse_value: anytype) type {
     return struct {
@@ -119,12 +113,12 @@ const Pem = struct {
     pub fn from_bytes(self: *Self, buf: []const u8) Error!void {
         var it = std.mem.tokenizeAny(u8, buf, " ");
 
-        const magic = parse_magic(it.next() orelse return Error.CorruptedPemFormat) orelse
+        const magic = parse_magic(it.next() orelse return Error.InvalidFileFormat) orelse
             return Error.InvalidMagicString;
 
-        const ref = it.next() orelse return Error.CorruptedPemFormat;
+        const ref = it.next() orelse return Error.InvalidFileFormat;
 
-        const host = it.next() orelse return Error.CorruptedPemFormat;
+        const host = it.next() orelse return Error.InvalidFileFormat;
 
         const len = try self.decoder.calcSizeForSlice(ref);
 
