@@ -212,7 +212,7 @@ pub const CriticalOptions = struct {
 
     const Self = @This();
 
-    const Tag = enum {
+    pub const Tags = enum {
         /// Specifies a command that is executed (replacing any the user specified
         /// on the ssh command-line) whenever this key is used for authentication.
         force_command,
@@ -229,9 +229,9 @@ pub const CriticalOptions = struct {
         /// their signature formats.
         verify_required,
 
-        pub const strings = enum_to_ssh_str(Self.Tag, "");
+        pub const strings = enum_to_ssh_str(Self.Tags, "");
 
-        pub fn as_string(self: *const Self.Tag) []const u8 {
+        pub fn as_string(self: *const Self.Tags) []const u8 {
             return Self.Tag.strings[self.*];
         }
     };
@@ -260,8 +260,8 @@ pub const CriticalOptions = struct {
         }.parse_value,
     );
 
-    inline fn is_valid_option(opt: []const u8) ?CriticalOptions.Tag {
-        for (Self.Tag.strings, 0..) |s, i| {
+    inline fn is_valid_option(opt: []const u8) ?CriticalOptions.Tags {
+        for (Self.Tags.strings, 0..) |s, i| {
             if (memcmp(u8, s, opt)) return @enumFromInt(i);
         }
 
@@ -270,7 +270,7 @@ pub const CriticalOptions = struct {
 };
 
 pub const CriticalOption = struct {
-    kind: CriticalOptions.Tag,
+    kind: CriticalOptions.Tags,
     value: []const u8,
 };
 
@@ -281,7 +281,7 @@ pub const Extensions = struct {
 
     const Self = @This();
 
-    const Tags = enum(u8) {
+    pub const Tags = enum(u8) {
         /// Flag indicating that signatures made with this certificate need not
         /// assert FIDO user presence. This option only makes sense for the
         /// U2F/FIDO security key types that support this feature in their
@@ -311,7 +311,7 @@ pub const Extensions = struct {
 
         const strings = enum_to_ssh_str(Self.Tags, "");
 
-        inline fn as_string(self: *const Self.Tags) []const u8 {
+        pub inline fn as_string(self: *const Self.Tags) []const u8 {
             return Self.strings[@intFromEnum(self.*)];
         }
     };
