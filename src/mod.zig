@@ -10,14 +10,21 @@ const assert = std.debug.assert;
 const memcmp = std.mem.eql;
 
 pub const Error = error{
-    fail_to_parse,
-    invalid_magic_string,
-    malformed_certificate,
-    malformed_integer,
-    malformed_string,
+    CorruptedPemFormat,
+    FailToParse,
+    InvalidCharacter,
+    InvalidMagicString,
+    InvalidPadding,
+    MalformedCertificate,
+    /// Invalid RFC-4251 integer
+    MalformedInteger,
+    /// Invalid RFC-4251 string
+    MalformedString,
+    NoSpaceLeft,
+    OutOfMemory,
     /// As per spec, repeated extension are not allowed.
-    repeated_extension,
-    unkown_extension,
+    RepeatedExtension,
+    UnkownExtension,
 };
 
 fn GenericIteratorInner(comptime T: type, parse_value: anytype) type {
@@ -112,20 +119,19 @@ const Pem = struct {
     pub fn from_bytes(self: *Self, buf: []const u8) Error!void {
         var it = std.mem.tokenizeAny(u8, buf, " ");
 
-        const magic = parse_magic(it.next() orelse return Error.fail_to_parse) orelse
-            return Error.fail_to_parse;
+        const magic = parse_magic(it.next() orelse return Error.CorruptedPemFormat) orelse
+            return Error.InvalidMagicString;
 
-        const ref = it.next() orelse return Error.fail_to_parse;
+        const ref = it.next() orelse return Error.CorruptedPemFormat;
 
-        const host = it.next() orelse return Error.fail_to_parse;
+        const host = it.next() orelse return Error.CorruptedPemFormat;
 
-        const len = self.decoder.calcSizeForSlice(ref) catch return Error.fail_to_parse;
+        const len = try self.decoder.calcSizeForSlice(ref);
 
-        self.der = self.allocator.alloc(u8, len) catch return Error.fail_to_parse;
+        self.der = try self.allocator.alloc(u8, len);
         errdefer self.deinit();
 
-        self.decoder.decode(self.der.?, ref) catch
-            return Error.fail_to_parse;
+        try self.decoder.decode(self.der.?, ref);
 
         self.pem = .{
             .magic = magic,
@@ -157,7 +163,7 @@ pub const Cert = union(enum) {
     pub fn from_der(magic: ?Magic, der: []const u8) Error!Self {
         // FIXME: get the magic
         const m = magic orelse
-            return Error.fail_to_parse;
+            return Error.InvalidMagicString;
 
         return switch (m) {
             .ssh_rsa,
@@ -343,7 +349,7 @@ pub const Extensions = struct {
                     const bit: u8 = (@as(u8, 0x01) << @as(u3, @intCast(j)));
 
                     if (ret & bit != 0)
-                        return Error.repeated_extension;
+                        return Error.RepeatedExtension;
 
                     ret |= bit;
 
@@ -351,7 +357,7 @@ pub const Extensions = struct {
                 }
             }
 
-            return Error.unkown_extension;
+            return Error.UnkownExtension;
         }
 
         return ret;
@@ -479,7 +485,7 @@ inline fn parse_int(comptime T: type, buf: []const u8) Error!struct { usize, T }
     if (read_int(T, buf)) |n|
         return .{ @sizeOf(T), n };
 
-    return Error.malformed_integer;
+    return Error.MalformedInteger;
 }
 
 inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
@@ -487,12 +493,12 @@ inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
         const size = len + @sizeOf(u32);
 
         if (size > buf.len)
-            return Error.malformed_string;
+            return Error.MalformedString;
 
         return .{ size, buf[@sizeOf(u32)..size] };
     }
 
-    return Error.malformed_string;
+    return Error.MalformedString;
 }
 
 inline fn parse_magic(ref: []const u8) ?Magic {
