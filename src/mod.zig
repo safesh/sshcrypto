@@ -1,6 +1,8 @@
 const std = @import("std");
 const meta = std.meta;
+const base64 = std.base64;
 
+const Allocator = std.mem.Allocator;
 const Decoder = std.base64.standard.Decoder;
 
 const debug = std.debug.print;
@@ -78,104 +80,116 @@ fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [meta.fields(T).len][]co
     return ret;
 }
 
-// TODO: Refactor this
-pub const Cert = struct {
-    allocator: std.mem.Allocator,
+const Pem = struct {
+    allocator: Allocator,
+    decoder: base64.Base64Decoder,
 
-    buf: ?[]u8 = null,
+    pem: ?struct {
+        magic: Magic,
+        // FIXME: Implement support for this
+        comment: ?[]const u8 = null,
+        ref: []const u8,
+        host: []const u8,
+        // Certificate in DER
+    },
 
-    kind: KeyType = undefined,
+    der: ?[]u8 = null,
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator) Cert {
+    pub fn init(allocator: Allocator, decoder: base64.Base64Decoder) Self {
         return .{
             .allocator = allocator,
+            .decoder = decoder,
+            .pem = .{
+                .magic = undefined,
+                .ref = undefined,
+                .host = undefined,
+            },
         };
     }
 
+    pub fn from_bytes(self: *Self, buf: []const u8) Error!void {
+        var it = std.mem.tokenizeAny(u8, buf, " ");
+
+        const magic = parse_magic(it.next() orelse return Error.fail_to_parse) orelse
+            return Error.fail_to_parse;
+
+        const ref = it.next() orelse return Error.fail_to_parse;
+
+        const host = it.next() orelse return Error.fail_to_parse;
+
+        const len = self.decoder.calcSizeForSlice(ref) catch return Error.fail_to_parse;
+
+        self.der = self.allocator.alloc(u8, len) catch return Error.fail_to_parse;
+        errdefer self.deinit();
+
+        self.decoder.decode(self.der.?, ref) catch
+            return Error.fail_to_parse;
+
+        self.pem = .{
+            .magic = magic,
+            .ref = ref,
+            .host = host,
+        };
+    }
+
+    pub fn reset(self: *Self) void {
+        self.pem = null;
+
+        self.deinit();
+    }
+
     pub fn deinit(self: *Self) void {
-        if (self.*.buf) |buf|
-            self.allocator.free(buf[0..buf.len]);
-    }
-
-    fn get_der(self: *Self, raw: []const u8) ?[]const u8 {
-        var it = std.mem.split(u8, raw, " ");
-
-        _ = it.next(); // skip magic if DER encoded
-
-        if (it.next()) |data| {
-            const len = Decoder.calcSizeForSlice(data) catch return null;
-
-            self.*.buf = self.allocator.alloc(u8, len) catch return null;
-
-            Decoder.decode(self.*.buf.?, data) catch return null;
-
-            return self.*.buf;
-        }
-
-        return null;
-    }
-
-    pub fn parse(self: *Self, raw: []const u8) Error!void {
-        for (Magic.strings, 0..) |magic, i| {
-            if (raw.len < magic.len) return error.malformed_certificate;
-
-            if (memcmp(u8, raw[0..magic.len], magic)) return switch (i) {
-                0, 6, 7 => {
-                    const data = if (self.get_der(raw)) |der| der else raw;
-
-                    self.kind = .{
-                        .rsa = try RSA.from(data, @enumFromInt(i)),
-                    };
-                },
-                1 => {
-                    const data = if (self.get_der(raw)) |der| der else raw;
-
-                    self.kind = .{
-                        .dsa = try DSA.from(data, @enumFromInt(i)),
-                    };
-                },
-                2...4 => {
-                    const data = if (self.get_der(raw)) |der| der else raw;
-
-                    self.kind = .{
-                        .ecdsa = try ECDSA.from(data, @enumFromInt(i)),
-                    };
-                },
-                5 => {
-                    const data = if (self.get_der(raw)) |der| der else raw;
-
-                    self.kind = .{
-                        .ed25519 = try ED25519.from(data, @enumFromInt(i)),
-                    };
-                },
-                else => unreachable,
-            };
-        }
-
-        // Try to parse pem
-
-        return Error.invalid_magic_string;
+        if (self.der) |der|
+            self.allocator.free(der);
     }
 };
 
-pub const KeyType = union(enum) {
+pub const Cert = union(enum) {
     rsa: RSA,
-    dsa: DSA,
+    // dsa: DSA,
     ecdsa: ECDSA,
     ed25519: ED25519,
+
+    const Self = @This();
+
+    pub fn from_der(magic: ?Magic, der: []const u8) Error!Self {
+        // FIXME: get the magic
+        const m = magic orelse
+            return Error.fail_to_parse;
+
+        return switch (m) {
+            .ssh_rsa,
+            .rsa_sha2_256,
+            .rsa_sha2_512,
+            => .{ .rsa = try RSA.from_bytes(m, der) },
+
+            // .ssh_dsa,
+            // => .{ .dsa = try DSA.from(der, m) },
+
+            .ecdsa_sha2_nistp256,
+            .ecdsa_sha2_nistp384,
+            .ecdsa_sha2_nistp521,
+            => .{ .ecdsa = try ECDSA.from_bytes(m, der) },
+
+            .ssh_ed25519,
+            => .{ .ed25519 = try ED25519.from_bytes(m, der) },
+
+            else => std.debug.panic("DSA certificates are not supported for now", .{}),
+        };
+    }
 };
 
 pub const Magic = enum(u3) {
-    ssh_rsa = 0,
-    ssh_dss = 1,
-    ecdsa_sha2_nistp256 = 2,
-    ecdsa_sha2_nistp384 = 3,
-    ecdsa_sha2_nistp521 = 4,
-    ssh_ed25519 = 5,
-    rsa_sha2_256 = 6,
-    rsa_sha2_512 = 7,
+    ssh_rsa,
+    ssh_dsa,
+    ecdsa_sha2_nistp256,
+    ecdsa_sha2_nistp384,
+    ecdsa_sha2_nistp521,
+    ssh_ed25519,
+    rsa_sha2_256,
+    rsa_sha2_512,
 
     const Self = @This();
 
@@ -186,7 +200,7 @@ pub const Magic = enum(u3) {
     }
 };
 
-pub const CertType = enum(u32) {
+pub const CertType = enum(u2) {
     user = 1,
     host = 2,
 };
@@ -222,11 +236,8 @@ pub const CriticalOptions = struct {
         }
     };
 
-    pub fn iter(self: *Self) Self.Iterator {
-        return Self.Iterator{
-            .ref = self.ref,
-            .off = 0,
-        };
+    pub fn iter(self: *const Self) Self.Iterator {
+        return .{ .ref = self.ref, .off = 0 };
     }
 
     pub const Iterator = GenericIterator(
@@ -305,14 +316,11 @@ pub const Extensions = struct {
         }
     };
 
-    fn iter(self: Self) Self.Iterator {
-        return .{
-            .ref = self.ref,
-            .off = 0,
-        };
+    pub fn iter(self: *const Self) Self.Iterator {
+        return .{ .ref = self.ref, .off = 0 };
     }
 
-    const Iterator = GenericIterator(
+    pub const Iterator = GenericIterator(
         struct {
             inline fn parse_value(ref: []const u8, off: *usize, key: []const u8) ?[]const u8 {
                 // Skip empty pair
@@ -324,7 +332,7 @@ pub const Extensions = struct {
     );
 
     /// Returns the extensions as bitflags, checking if they are valid.
-    fn to_bitflags(self: *Self) Error!u8 {
+    pub fn to_bitflags(self: *const Self) Error!u8 {
         var ret: u8 = 0;
 
         var it = self.iter();
@@ -356,13 +364,10 @@ const Principals = struct {
     const Self = @This();
 
     fn iter(self: *const Self) Self.Iterator {
-        return .{
-            .ref = self.ref,
-            .off = 0,
-        };
+        return .{ .ref = self.ref, .off = 0 };
     }
 
-    const Iterator = GenericIterator(
+    pub const Iterator = GenericIterator(
         struct {
             inline fn parse_value(_: []const u8, _: *usize, key: []const u8) ?[]const u8 {
                 return key;
@@ -390,36 +395,31 @@ pub const RSA = struct {
 
     const Self = @This();
 
-    fn from(buf: []const u8, magic: Magic) Error!RSA {
-        return try parse(Self, magic, buf);
+    fn from_bytes(magic: Magic, der: []const u8) !RSA {
+        return try parse(Self, magic, der);
     }
 };
 
-pub const DSA = struct {
-    magic: Magic,
-    nonce: []const u8,
-    p: []const u8, // TODO: mpint
-    q: []const u8, // TODO: mpint
-    g: []const u8, // TODO: mpint
-    y: []const u8, // TODO: mpint
-    serial: u64,
-    kind: CertType,
-    key_id: []const u8,
-    valid_principals: Principals,
-    valid_after: []const u8,
-    valid_before: []const u8,
-    critical_options: CriticalOptions,
-    extensions: Extensions,
-    reserved: []const u8,
-    signature_key: []const u8,
-    signature: []const u8,
-
-    const Self = @This();
-
-    fn from(buf: []const u8, magic: Magic) Error!DSA {
-        return try parse(Self, magic, buf);
-    }
-};
+// NOT USED
+// pub const DSA = struct {
+//     magic: Magic,
+//     nonce: []const u8,
+//     p: []const u8, // TODO: mpint
+//     q: []const u8, // TODO: mpint
+//     g: []const u8, // TODO: mpint
+//     y: []const u8, // TODO: mpint
+//     serial: u64,
+//     kind: CertType,
+//     key_id: []const u8,
+//     valid_principals: Principals,
+//     valid_after: []const u8,
+//     valid_before: []const u8,
+//     critical_options: CriticalOptions,
+//     extensions: Extensions,
+//     reserved: []const u8,
+//     signature_key: []const u8,
+//     signature: []const u8,
+// };
 
 pub const ECDSA = struct {
     magic: Magic,
@@ -440,7 +440,7 @@ pub const ECDSA = struct {
 
     const Self = @This();
 
-    fn from(buf: []const u8, magic: Magic) Error!ECDSA {
+    fn from_bytes(magic: Magic, buf: []const u8) !ECDSA {
         return try parse(Self, magic, buf);
     }
 };
@@ -463,8 +463,8 @@ pub const ED25519 = struct {
 
     const Self = @This();
 
-    fn from(buf: []const u8, magic: Magic) Error!ED25519 {
-        return try parse(ED25519, magic, buf);
+    fn from_bytes(magic: Magic, buf: []const u8) !ED25519 {
+        return try parse(Self, magic, buf);
     }
 };
 
@@ -493,6 +493,15 @@ inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
     }
 
     return Error.malformed_string;
+}
+
+inline fn parse_magic(ref: []const u8) ?Magic {
+    for (Magic.strings, 0..) |magic, i| {
+        if (memcmp(u8, magic, ref))
+            return @enumFromInt(i);
+    }
+
+    return null;
 }
 
 inline fn parse_cert_type(ref: []const u8) Error!struct { usize, CertType } {
@@ -566,16 +575,18 @@ test "test parse rsa cert" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
+
+    try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
 
     var timer = try Timer.start();
 
-    try cert.parse(@embedFile("test/rsa-cert.pub"));
+    const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
 
     debug("rsa cert took = {}ns\n", .{timer.read()});
 
-    switch (cert.kind) {
+    switch (cert) {
         .rsa => |c| {
             assert(c.magic == Magic.ssh_rsa);
             assert(c.serial == 2);
@@ -597,16 +608,18 @@ test "test parse ecdsa cert" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
+
+    try pem.from_bytes(@embedFile("test/ecdsa-cert.pub"));
 
     var timer = try Timer.start();
 
-    try cert.parse(@embedFile("test/ecdsa-cert.pub"));
+    const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
 
     debug("ecdsa cert took = {}ns\n", .{timer.read()});
 
-    switch (cert.kind) {
+    switch (cert) {
         .ecdsa => |c| {
             assert(c.magic == Magic.ecdsa_sha2_nistp256);
             assert(c.serial == 2);
@@ -628,16 +641,18 @@ test "test parse ed25519 cert" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
+
+    try pem.from_bytes(@embedFile("test/ed25519-cert.pub"));
 
     var timer = try Timer.start();
 
-    try cert.parse(@embedFile("test/ed25519-cert.pub"));
+    const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
 
     debug("ed25519 cert took = {}ns\n", .{timer.read()});
 
-    switch (cert.kind) {
+    switch (cert) {
         .ed25519 => |c| {
             assert(c.magic == Magic.ssh_ed25519);
             assert(c.serial == 2);
@@ -656,12 +671,29 @@ test "test parse ed25519 cert" {
     }
 }
 
+test "benchmark rsa `from_bytes`" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
+
+    try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
+
+    var timer = try Timer.start();
+    for (0..1000) |_| {
+        _ = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
+
+        debug("rsa `from_bytes` took = {}ns\n", .{timer.lap()});
+    }
+}
+
 test "test extensions iterator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
 
     const extensions = [_][]const u8{
         "permit-X11-forwarding",
@@ -671,9 +703,11 @@ test "test extensions iterator" {
         "permit-user-rc",
     };
 
-    try cert.parse(@embedFile("test/rsa-cert.pub"));
+    try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
 
-    var it = cert.kind.rsa.extensions.iter();
+    const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
+
+    var it = rsa.extensions.iter();
 
     for (extensions) |extension| {
         assert(memcmp(u8, extension, it.next().?));
@@ -688,13 +722,15 @@ test "test extensions to bitflags" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
 
-    try cert.parse(@embedFile("test/rsa-cert.pub"));
+    try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
+
+    const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
 
     assert(
-        try cert.kind.rsa.extensions.to_bitflags() ==
+        try rsa.extensions.to_bitflags() ==
             @intFromEnum(Ext.permit_agent_forwarding) |
             @intFromEnum(Ext.permit_X11_forwarding) |
             @intFromEnum(Ext.permit_user_rc) |
@@ -707,14 +743,16 @@ test "test multiple valid principals iterator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
 
     const valid_principals = [_][]const u8{ "foo", "bar", "baz" };
 
-    try cert.parse(@embedFile("test/multiple-principals-cert.pub"));
+    try pem.from_bytes(@embedFile("test/multiple-principals-cert.pub"));
 
-    var it = cert.kind.rsa.valid_principals.iter();
+    const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
+
+    var it = rsa.valid_principals.iter();
 
     for (valid_principals) |principal| {
         assert(memcmp(u8, principal, it.next().?));
@@ -725,17 +763,19 @@ test "test critical options iterator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
 
-    try cert.parse(@embedFile("test/force-command-cert.pub"));
+    try pem.from_bytes(@embedFile("test/force-command-cert.pub"));
 
     const critical_options = [_]CriticalOption{.{
         .kind = .force_command,
         .value = "ls -la",
     }};
 
-    var it = cert.kind.rsa.critical_options.iter();
+    const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
+
+    var it = rsa.critical_options.iter();
 
     for (critical_options) |critical_option| {
         const opt = it.next().?;
@@ -751,10 +791,10 @@ test "test multiple critical options iterator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var cert = Cert.init(gpa.allocator());
-    defer cert.deinit();
+    var pem = Pem.init(gpa.allocator(), Decoder);
+    defer pem.deinit();
 
-    try cert.parse(@embedFile("test/multiple-critical-options-cert.pub"));
+    try pem.from_bytes(@embedFile("test/multiple-critical-options-cert.pub"));
 
     const critical_options = [_]CriticalOption{
         .{
@@ -767,7 +807,9 @@ test "test multiple critical options iterator" {
         },
     };
 
-    var it = cert.kind.rsa.critical_options.iter();
+    const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
+
+    var it = rsa.critical_options.iter();
 
     for (critical_options) |critical_option| {
         const opt = it.next().?;
