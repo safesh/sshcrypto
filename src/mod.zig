@@ -504,25 +504,32 @@ inline fn parse_magic(ref: []const u8) ?Magic {
     return null;
 }
 
-inline fn parse_cert_type(ref: []const u8) Error!struct { usize, CertType } {
+fn Cont(comptime T: type) type {
+    return struct {
+        usize,
+        T,
+    };
+}
+
+inline fn parse_cert_type(ref: []const u8) Error!Cont(CertType) {
     const next, const val = try parse_int(u32, ref);
 
     return .{ next, @enumFromInt(val) };
 }
 
-inline fn parse_critical_options(buf: []const u8) Error!struct { usize, CriticalOptions } {
+inline fn parse_critical_options(buf: []const u8) Error!Cont(CriticalOptions) {
     const next, const ref = try parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
 
-inline fn parse_principals(buf: []const u8) Error!struct { usize, Principals } {
+inline fn parse_principals(buf: []const u8) Error!Cont(Principals) {
     const next, const ref = try parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
 
-inline fn parse_extensions(buf: []const u8) Error!struct { usize, Extensions } {
+inline fn parse_extensions(buf: []const u8) Error!Cont(Extensions) {
     const next, const ref = try parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
