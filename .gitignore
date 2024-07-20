@@ -9,3 +9,5 @@ zig-out/
 
 /test/ca
 /test/user
+
+/perf.data*

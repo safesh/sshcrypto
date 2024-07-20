@@ -580,11 +580,7 @@ test "test parse rsa cert" {
 
     try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
 
-    var timer = try Timer.start();
-
     const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
-
-    debug("rsa cert took = {}ns\n", .{timer.read()});
 
     switch (cert) {
         .rsa => |c| {
@@ -613,11 +609,7 @@ test "test parse ecdsa cert" {
 
     try pem.from_bytes(@embedFile("test/ecdsa-cert.pub"));
 
-    var timer = try Timer.start();
-
     const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
-
-    debug("ecdsa cert took = {}ns\n", .{timer.read()});
 
     switch (cert) {
         .ecdsa => |c| {
@@ -646,11 +638,7 @@ test "test parse ed25519 cert" {
 
     try pem.from_bytes(@embedFile("test/ed25519-cert.pub"));
 
-    var timer = try Timer.start();
-
     const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
-
-    debug("ed25519 cert took = {}ns\n", .{timer.read()});
 
     switch (cert) {
         .ed25519 => |c| {
@@ -681,11 +669,15 @@ test "benchmark rsa `from_bytes`" {
     try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
 
     var timer = try Timer.start();
-    for (0..1000) |_| {
+
+    var sum: u64 = 0;
+    for (0..1024) |_| {
         _ = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
 
-        debug("rsa `from_bytes` took = {}ns\n", .{timer.lap()});
+        sum += timer.lap();
     }
+
+    debug("rsa `from_bytes` took ~= {}ns\n", .{sum / 1024});
 }
 
 test "test extensions iterator" {

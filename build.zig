@@ -18,5 +18,30 @@ pub fn build(b: *std.Build) void {
     });
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&b.addRunArtifact(unit_test).step);
+    const run_test = b.addRunArtifact(unit_test);
+
+    test_step.dependOn(&run_test.step);
+
+    const emit_docs = b.addSystemCommand(&[_][]const u8{
+        "zig",
+        "test",
+        "src/mod.zig",
+        "-femit-docs",
+        "-fno-emit-bin",
+    });
+
+    const docs_step = b.step("docs", "Build documentation");
+    docs_step.dependOn(&emit_docs.step);
+
+    const run_perf = b.addSystemCommand(&[_][]const u8{
+        "perf",
+        "record",
+        "-e",
+        "cache-references,cache-misses,cycles,instructions,branches,faults,migrations",
+    });
+
+    run_perf.addArtifactArg(unit_test);
+
+    const perf_step = b.step("perf", "Perf record");
+    perf_step.dependOn(&run_perf.step);
 }
