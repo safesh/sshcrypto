@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
 
     test_step.dependOn(&run_test.step);
 
-    const emit_docs = b.addSystemCommand(&[_][]const u8{
+    const emit_docs = b.addSystemCommand(&.{
         "zig",
         "test",
         "src/mod.zig",
@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Build documentation");
     docs_step.dependOn(&emit_docs.step);
 
-    const run_perf = b.addSystemCommand(&[_][]const u8{
+    const run_perf = b.addSystemCommand(&.{
         "perf",
         "record",
         "-e",
@@ -44,4 +44,9 @@ pub fn build(b: *std.Build) void {
 
     const perf_step = b.step("perf", "Perf record");
     perf_step.dependOn(&run_perf.step);
+
+    const run_debug = b.addSystemCommand(&.{"gdb"});
+
+    const debug_step = b.step("debug", "Run test target with gdb");
+    debug_step.dependOn(&run_debug.step);
 }
