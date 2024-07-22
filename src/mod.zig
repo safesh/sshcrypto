@@ -578,99 +578,95 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
 
 const Timer = std.time.Timer;
 
-test "test parse rsa cert" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+const expectEqual = std.testing.expectEqual;
+const expect = std.testing.expect;
 
-    var pem = Pem.init(gpa.allocator(), Decoder);
+const testing = std.testing;
+
+test "parse rsa cert" {
+    var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
 
     try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
 
-    const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
+    switch (try Cert.from_der(
+        pem.pem.?.magic,
+        pem.der.?,
+    )) {
+        .rsa => |cert| {
+            try expectEqual(cert.magic, Magic.ssh_rsa);
+            try expectEqual(cert.serial, 2);
+            try expectEqual(cert.kind, CertType.user);
+            try expect(memcmp(u8, cert.key_id, "abc"));
 
-    switch (cert) {
-        .rsa => |c| {
-            assert(c.magic == Magic.ssh_rsa);
-            assert(c.serial == 2);
-            assert(c.kind == CertType.user);
-            assert(memcmp(u8, c.key_id, "abc"));
+            var it = cert.valid_principals.iter();
+            try expect(memcmp(u8, it.next().?, "root"));
+            try expect(it.done());
 
-            var it = c.valid_principals.iter();
-            assert(memcmp(u8, it.next().?, "root"));
-            assert(it.done());
-
-            assert(c.valid_after == 0);
-            assert(c.valid_before == std.math.maxInt(u64));
+            try expectEqual(cert.valid_after, 0);
+            try expectEqual(cert.valid_before, std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
     }
 }
 
-test "test parse ecdsa cert" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var pem = Pem.init(gpa.allocator(), Decoder);
+test "parse ecdsa cert" {
+    var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
 
     try pem.from_bytes(@embedFile("test/ecdsa-cert.pub"));
 
-    const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
+    switch (try Cert.from_der(
+        pem.pem.?.magic,
+        pem.der.?,
+    )) {
+        .ecdsa => |cert| {
+            try expectEqual(cert.magic, Magic.ecdsa_sha2_nistp256);
+            try expectEqual(cert.serial, 2);
+            try expectEqual(cert.kind, CertType.user);
+            try expect(memcmp(u8, cert.key_id, "abc"));
 
-    switch (cert) {
-        .ecdsa => |c| {
-            assert(c.magic == Magic.ecdsa_sha2_nistp256);
-            assert(c.serial == 2);
-            assert(c.kind == CertType.user);
-            assert(memcmp(u8, c.key_id, "abc"));
+            var it = cert.valid_principals.iter();
+            try expect(memcmp(u8, it.next().?, "root"));
+            try expect(it.done());
 
-            var it = c.valid_principals.iter();
-            assert(memcmp(u8, it.next().?, "root"));
-            assert(it.done());
-
-            assert(c.valid_after == 0);
-            assert(c.valid_before == std.math.maxInt(u64));
+            try expectEqual(cert.valid_after, 0);
+            try expectEqual(cert.valid_before, std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
     }
 }
 
-test "test parse ed25519 cert" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var pem = Pem.init(gpa.allocator(), Decoder);
+test "parse ed25519 cert" {
+    var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
 
     try pem.from_bytes(@embedFile("test/ed25519-cert.pub"));
 
-    const cert = try Cert.from_der(pem.pem.?.magic, pem.der.?);
+    switch (try Cert.from_der(
+        pem.pem.?.magic,
+        pem.der.?,
+    )) {
+        .ed25519 => |cert| {
+            try expectEqual(cert.magic, Magic.ssh_ed25519);
+            try expectEqual(cert.serial, 2);
+            try expectEqual(cert.kind, CertType.user);
 
-    switch (cert) {
-        .ed25519 => |c| {
-            assert(c.magic == Magic.ssh_ed25519);
-            assert(c.serial == 2);
-            assert(c.kind == CertType.user);
-            assert(memcmp(u8, c.key_id, "abc"));
+            try expect(memcmp(u8, cert.key_id, "abc"));
 
-            var it = c.valid_principals.iter();
-            assert(memcmp(u8, it.next().?, "root"));
+            var it = cert.valid_principals.iter();
+            try expect(memcmp(u8, it.next().?, "root"));
+            try expect(it.done());
 
-            assert(it.done());
-
-            assert(c.valid_after == 0);
-            assert(c.valid_before == std.math.maxInt(u64));
+            try expectEqual(cert.valid_after, 0);
+            try expectEqual(cert.valid_before, std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
     }
 }
 
 test "benchmark rsa `from_bytes`" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var pem = Pem.init(gpa.allocator(), Decoder);
+    var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
 
     try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
@@ -687,11 +683,8 @@ test "benchmark rsa `from_bytes`" {
     debug("rsa `from_bytes` took ~= {}ns\n", .{sum / 1024});
 }
 
-test "test extensions iterator" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var pem = Pem.init(gpa.allocator(), Decoder);
+test "extensions iterator" {
+    var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
 
     const extensions = [_][]const u8{
@@ -709,28 +702,25 @@ test "test extensions iterator" {
     var it = rsa.extensions.iter();
 
     for (extensions) |extension| {
-        assert(memcmp(u8, extension, it.next().?));
+        try expect(memcmp(u8, extension, it.next().?));
     }
 
-    assert(it.done());
+    try expect(it.done());
 }
 
-test "test extensions to bitflags" {
+test "extensions to bitflags" {
     const Ext = Extensions.Tags;
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var pem = Pem.init(gpa.allocator(), Decoder);
+    var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
 
     try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
 
     const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
 
-    assert(
-        try rsa.extensions.to_bitflags() ==
-            @intFromEnum(Ext.permit_agent_forwarding) |
+    try expectEqual(
+        try rsa.extensions.to_bitflags(),
+        @intFromEnum(Ext.permit_agent_forwarding) |
             @intFromEnum(Ext.permit_X11_forwarding) |
             @intFromEnum(Ext.permit_user_rc) |
             @intFromEnum(Ext.permit_port_forwarding) |
@@ -738,14 +728,16 @@ test "test extensions to bitflags" {
     );
 }
 
-test "test multiple valid principals iterator" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+test "multiple valid principals iterator" {
+    // Reference
+    const valid_principals = [_][]const u8{
+        "foo",
+        "bar",
+        "baz",
+    };
 
-    var pem = Pem.init(gpa.allocator(), Decoder);
+    var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
-
-    const valid_principals = [_][]const u8{ "foo", "bar", "baz" };
 
     try pem.from_bytes(@embedFile("test/multiple-principals-cert.pub"));
 
@@ -754,23 +746,21 @@ test "test multiple valid principals iterator" {
     var it = rsa.valid_principals.iter();
 
     for (valid_principals) |principal| {
-        assert(memcmp(u8, principal, it.next().?));
+        try expect(memcmp(u8, principal, it.next().?));
     }
 }
 
-test "test critical options iterator" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var pem = Pem.init(gpa.allocator(), Decoder);
-    defer pem.deinit();
-
-    try pem.from_bytes(@embedFile("test/force-command-cert.pub"));
-
+test "critical options iterator" {
+    // Reference
     const critical_options = [_]CriticalOption{.{
         .kind = .force_command,
         .value = "ls -la",
     }};
+
+    var pem = Pem.init(testing.allocator, Decoder);
+    defer pem.deinit();
+
+    try pem.from_bytes(@embedFile("test/force-command-cert.pub"));
 
     const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
 
@@ -779,22 +769,15 @@ test "test critical options iterator" {
     for (critical_options) |critical_option| {
         const opt = it.next().?;
 
-        assert(critical_option.kind == opt.kind);
-        assert(memcmp(u8, critical_option.value, opt.value));
+        try expectEqual(critical_option.kind, opt.kind);
+        try expect(memcmp(u8, critical_option.value, opt.value));
     }
 
-    assert(it.done());
+    try expect(it.done());
 }
 
-test "test multiple critical options iterator" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    var pem = Pem.init(gpa.allocator(), Decoder);
-    defer pem.deinit();
-
-    try pem.from_bytes(@embedFile("test/multiple-critical-options-cert.pub"));
-
+test "multiple critical options iterator" {
+    // Reference
     const critical_options = [_]CriticalOption{
         .{
             .kind = .force_command,
@@ -806,6 +789,11 @@ test "test multiple critical options iterator" {
         },
     };
 
+    var pem = Pem.init(testing.allocator, Decoder);
+    defer pem.deinit();
+
+    try pem.from_bytes(@embedFile("test/multiple-critical-options-cert.pub"));
+
     const rsa = try RSA.from_bytes(pem.pem.?.magic, pem.der.?);
 
     var it = rsa.critical_options.iter();
@@ -813,9 +801,9 @@ test "test multiple critical options iterator" {
     for (critical_options) |critical_option| {
         const opt = it.next().?;
 
-        assert(critical_option.kind == opt.kind);
-        assert(memcmp(u8, critical_option.value, opt.value));
+        try expectEqual(critical_option.kind, opt.kind);
+        try expect(memcmp(u8, critical_option.value, opt.value));
     }
 
-    assert(it.done());
+    try expect(it.done());
 }
