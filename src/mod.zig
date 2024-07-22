@@ -150,16 +150,14 @@ pub const Cert = union(enum) {
 
     const Self = @This();
 
-    pub fn from_der(magic: ?Magic, der: []const u8) Error!Self {
-        // FIXME: get the magic
-        const m = magic orelse
-            return Error.InvalidMagicString;
+    // TODO: from bytes...
 
-        return switch (m) {
+    pub fn from_der(der: *const PemDecoder.Der) Error!Self {
+        return switch (der.magic) {
             .ssh_rsa,
             .rsa_sha2_256,
             .rsa_sha2_512,
-            => .{ .rsa = try RSA.from_bytes(m, der) },
+            => .{ .rsa = try RSA.from_der(der) },
 
             // .ssh_dsa,
             // => .{ .dsa = try DSA.from(der, m) },
@@ -167,10 +165,10 @@ pub const Cert = union(enum) {
             .ecdsa_sha2_nistp256,
             .ecdsa_sha2_nistp384,
             .ecdsa_sha2_nistp521,
-            => .{ .ecdsa = try ECDSA.from_bytes(m, der) },
+            => .{ .ecdsa = try ECDSA.from_der(der) },
 
             .ssh_ed25519,
-            => .{ .ed25519 = try ED25519.from_bytes(m, der) },
+            => .{ .ed25519 = try ED25519.from_der(der) },
 
             else => std.debug.panic("DSA certificates are not supported for now", .{}),
         };
@@ -391,8 +389,21 @@ pub const RSA = struct {
 
     const Self = @This();
 
-    fn from_bytes(magic: Magic, der: []const u8) !RSA {
-        return try parse(Self, magic, der);
+    inline fn from(magic: Magic, src: []const u8) Error!RSA {
+        switch (magic) {
+            .ssh_rsa, .rsa_sha2_256, .rsa_sha2_512 => return try parse(Self, magic, src),
+            else => return Error.InvalidMagicString,
+        }
+    }
+
+    pub fn from_der(der: *const PemDecoder.Der) Error!RSA {
+        return from(der.magic, der.ref);
+    }
+
+    pub fn from_bytes(src: []const u8) Error!RSA {
+        _, const str = try parse_string(src);
+
+        return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
     }
 };
 
@@ -436,8 +447,21 @@ pub const ECDSA = struct {
 
     const Self = @This();
 
-    fn from_bytes(magic: Magic, buf: []const u8) !ECDSA {
-        return try parse(Self, magic, buf);
+    inline fn from(magic: Magic, src: []const u8) Error!ECDSA {
+        switch (magic) {
+            .ecdsa_sha2_nistp256, .ecdsa_sha2_nistp384, .ecdsa_sha2_nistp521 => return try parse(Self, magic, src),
+            else => return Error.InvalidMagicString,
+        }
+    }
+
+    pub fn from_der(der: *const PemDecoder.Der) Error!ECDSA {
+        return from(der.magic, der.ref);
+    }
+
+    pub fn from_bytes(src: []const u8) Error!ECDSA {
+        _, const str = try parse_string(src);
+
+        return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
     }
 };
 
@@ -459,8 +483,21 @@ pub const ED25519 = struct {
 
     const Self = @This();
 
-    fn from_bytes(magic: Magic, buf: []const u8) !ED25519 {
-        return try parse(Self, magic, buf);
+    inline fn from(magic: Magic, src: []const u8) Error!ED25519 {
+        switch (magic) {
+            .ssh_ed25519 => return try parse(Self, magic, src),
+            else => return Error.InvalidMagicString,
+        }
+    }
+
+    pub fn from_der(der: *const PemDecoder.Der) Error!ED25519 {
+        return from(der.magic, der.ref);
+    }
+
+    pub fn from_bytes(src: []const u8) Error!ED25519 {
+        _, const str = try parse_string(src);
+
+        return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
     }
 };
 
@@ -576,10 +613,7 @@ test "parse rsa cert" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
     defer der.deinit();
 
-    switch (try Cert.from_der(
-        der.magic,
-        der.ref,
-    )) {
+    switch (try Cert.from_der(&der)) {
         .rsa => |cert| {
             try expectEqual(cert.magic, Magic.ssh_rsa);
             try expectEqual(cert.serial, 2);
@@ -601,7 +635,12 @@ test "parse rsa cert bad cert" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
     defer der.deinit();
 
-    const cert = Cert.from_der(der.magic, der.ref[0..100]);
+    const len = der.ref.len;
+    der.ref.len = 100;
+
+    const cert = Cert.from_der(&der);
+
+    der.ref.len = len;
 
     try testing.expectError(Error.MalformedString, cert);
 }
@@ -610,10 +649,7 @@ test "parse ecdsa cert" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/ecdsa-cert.pub"));
     defer der.deinit();
 
-    switch (try Cert.from_der(
-        der.magic,
-        der.ref,
-    )) {
+    switch (try Cert.from_der(&der)) {
         .ecdsa => |cert| {
             try expectEqual(cert.magic, Magic.ecdsa_sha2_nistp256);
             try expectEqual(cert.serial, 2);
@@ -635,10 +671,7 @@ test "parse ed25519 cert" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/ed25519-cert.pub"));
     defer der.deinit();
 
-    switch (try Cert.from_der(
-        der.magic,
-        der.ref,
-    )) {
+    switch (try Cert.from_der(&der)) {
         .ed25519 => |cert| {
             try expectEqual(cert.magic, Magic.ssh_ed25519);
             try expectEqual(cert.serial, 2);
@@ -666,7 +699,7 @@ test "benchmark rsa `from_bytes`" {
     var timer = try Timer.start();
 
     for (0..1024) |_| {
-        _ = try RSA.from_bytes(der.magic, der.ref);
+        _ = try RSA.from_bytes(der.ref);
 
         sum += timer.lap();
     }
@@ -687,7 +720,7 @@ test "extensions iterator" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
     defer der.deinit();
 
-    const rsa = try RSA.from_bytes(der.magic, der.ref);
+    const rsa = try RSA.from_der(&der);
 
     var it = rsa.extensions.iter();
 
@@ -704,7 +737,7 @@ test "extensions to bitflags" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
     defer der.deinit();
 
-    const rsa = try RSA.from_bytes(der.magic, der.ref);
+    const rsa = try RSA.from_der(&der);
 
     try expectEqual(
         try rsa.extensions.to_bitflags(),
@@ -727,7 +760,7 @@ test "multiple valid principals iterator" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/multiple-principals-cert.pub"));
     defer der.deinit();
 
-    const rsa = try RSA.from_bytes(der.magic, der.ref);
+    const rsa = try RSA.from_der(&der);
 
     var it = rsa.valid_principals.iter();
 
@@ -746,7 +779,7 @@ test "critical options iterator" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/force-command-cert.pub"));
     defer der.deinit();
 
-    const rsa = try RSA.from_bytes(der.magic, der.ref);
+    const rsa = try RSA.from_der(&der);
 
     var it = rsa.critical_options.iter();
 
@@ -776,7 +809,7 @@ test "multiple critical options iterator" {
     var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/multiple-critical-options-cert.pub"));
     defer der.deinit();
 
-    const rsa = try RSA.from_bytes(der.magic, der.ref);
+    const rsa = try RSA.from_der(&der);
 
     var it = rsa.critical_options.iter();
 
