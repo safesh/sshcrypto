@@ -1,13 +1,18 @@
 const std = @import("std");
+
 const meta = std.meta;
 const base64 = std.base64;
+const testing = std.testing;
 
 const Allocator = std.mem.Allocator;
 const Decoder = std.base64.standard.Decoder;
+const Timer = std.time.Timer;
 
 const debug = std.debug.print;
 const assert = std.debug.assert;
 const memcmp = std.mem.eql;
+const expectEqual = std.testing.expectEqual;
+const expect = std.testing.expect;
 
 pub const Error = error{
     InvalidFileFormat,
@@ -576,13 +581,6 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
     return ret;
 }
 
-const Timer = std.time.Timer;
-
-const expectEqual = std.testing.expectEqual;
-const expect = std.testing.expect;
-
-const testing = std.testing;
-
 test "parse rsa cert" {
     var pem = Pem.init(testing.allocator, Decoder);
     defer pem.deinit();
@@ -608,6 +606,17 @@ test "parse rsa cert" {
         },
         else => return error.wrong_certificate,
     }
+}
+
+test "parse rsa cert bad cert" {
+    var pem = Pem.init(testing.allocator, Decoder);
+    defer pem.deinit();
+
+    try pem.from_bytes(@embedFile("test/rsa-cert.pub"));
+
+    const cert = Cert.from_der(pem.pem.?.magic, pem.der.?[0..100]);
+
+    try testing.expectError(Error.MalformedString, cert);
 }
 
 test "parse ecdsa cert" {
