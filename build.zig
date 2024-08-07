@@ -6,13 +6,13 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     _ = b.addModule("ssh-certs", .{
-        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = b.pathFromRoot("src/mod.zig") } },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = b.pathFromRoot("src/cert.zig") } },
         .target = target,
         .optimize = optimize,
     });
 
     const unit_test = b.addTest(.{
-        .root_source_file = b.path("src/mod.zig"),
+        .root_source_file = b.path("src/cert.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
     const emit_docs = b.addSystemCommand(&.{
         "zig",
         "test",
-        "src/mod.zig",
+        "src/cert.zig",
         "-femit-docs",
         "-fno-emit-bin",
     });

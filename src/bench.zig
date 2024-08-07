@@ -1,5 +1,5 @@
 const std = @import("std");
-const cert = @import("mod.zig");
+const cert = @import("cert.zig");
 
 const testing = std.testing;
 
