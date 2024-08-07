@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const PERF_EVENTS: []const u8 = "cache-references,cache-misses,cycles,instructions,branches,faults,migrations";
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
@@ -22,38 +24,32 @@ pub fn build(b: *std.Build) void {
 
     test_step.dependOn(&run_test.step);
 
-    const emit_docs = b.addSystemCommand(&.{
-        "zig",
-        "test",
-        "src/cert.zig",
-        "-femit-docs",
-        "-fno-emit-bin",
-    });
-
     const docs_step = b.step("docs", "Build documentation");
-    docs_step.dependOn(&emit_docs.step);
+    {
+        const emit_docs = b.addSystemCommand(&.{ "zig", "test", "src/cert.zig", "-femit-docs", "-fno-emit-bin" });
 
-    const perf = b.addTest(.{
-        .root_source_file = b.path("src/bench.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const run_perf = b.addSystemCommand(&.{
-        "perf",
-        "record",
-        "-e",
-        "cache-references,cache-misses,cycles,instructions,branches,faults,migrations",
-    });
-
-    run_perf.has_side_effects = true;
-    run_perf.addArtifactArg(perf);
+        docs_step.dependOn(&emit_docs.step);
+    }
 
     const perf_step = b.step("perf", "Perf record");
-    perf_step.dependOn(&run_perf.step);
+    {
+        const perf = b.addTest(.{
+            .root_source_file = b.path("src/cert_bench.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
 
-    const run_debug = b.addSystemCommand(&.{"gdb"});
+        const run_perf = b.addSystemCommand(&.{ "perf", "record", "-e", PERF_EVENTS });
+        run_perf.has_side_effects = true;
+        run_perf.addArtifactArg(perf);
+
+        perf_step.dependOn(&run_perf.step);
+    }
 
     const debug_step = b.step("debug", "Run test target with gdb");
-    debug_step.dependOn(&run_debug.step);
+    {
+        const run_debug = b.addSystemCommand(&.{"gdb"});
+
+        debug_step.dependOn(&run_debug.step);
+    }
 }
