@@ -33,6 +33,12 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Build documentation");
     docs_step.dependOn(&emit_docs.step);
 
+    const perf = b.addTest(.{
+        .root_source_file = b.path("src/bench.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const run_perf = b.addSystemCommand(&.{
         "perf",
         "record",
@@ -40,7 +46,8 @@ pub fn build(b: *std.Build) void {
         "cache-references,cache-misses,cycles,instructions,branches,faults,migrations",
     });
 
-    run_perf.addArtifactArg(unit_test);
+    run_perf.has_side_effects = true;
+    run_perf.addArtifactArg(perf);
 
     const perf_step = b.step("perf", "Perf record");
     perf_step.dependOn(&run_perf.step);

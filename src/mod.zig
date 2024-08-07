@@ -690,23 +690,6 @@ test "parse ed25519 cert" {
     }
 }
 
-test "benchmark rsa `from_bytes`" {
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
-    defer der.deinit();
-
-    var sum: u64 = 0;
-
-    var timer = try Timer.start();
-
-    for (0..1024) |_| {
-        _ = try RSA.from_bytes(der.ref);
-
-        sum += timer.lap();
-    }
-
-    debug("rsa `from_bytes` took ~= {}ns\n", .{sum / 1024});
-}
-
 test "extensions iterator" {
     // Reference
     const extensions = [_][]const u8{
