@@ -26,9 +26,20 @@ pub fn build(b: *std.Build) void {
 
     const docs_step = b.step("docs", "Build documentation");
     {
-        const emit_docs = b.addSystemCommand(&.{ "zig", "test", "src/cert.zig", "-femit-docs", "-fno-emit-bin" });
+        const docs_obj = b.addObject(.{
+            .name = "sshcerts",
+            .root_source_file = b.path("src/cert.zig"),
+            .target = target,
+            .optimize = .Debug,
+        });
 
-        docs_step.dependOn(&emit_docs.step);
+        const install_docs = b.addInstallDirectory(.{
+            .install_dir = .prefix,
+            .install_subdir = "sshcerts",
+            .source_dir = docs_obj.getEmittedDocs(),
+        });
+
+        docs_step.dependOn(&install_docs.step);
     }
 
     const perf_step = b.step("perf", "Perf record");
@@ -40,6 +51,7 @@ pub fn build(b: *std.Build) void {
         });
 
         const run_perf = b.addSystemCommand(&.{ "perf", "record", "-e", PERF_EVENTS });
+
         run_perf.has_side_effects = true;
         run_perf.addArtifactArg(perf);
 

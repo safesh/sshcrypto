@@ -536,6 +536,7 @@ inline fn parse_magic(ref: []const u8) ?Magic {
     return null;
 }
 
+// Parser continuation
 fn Cont(comptime T: type) type {
     return struct {
         usize,
