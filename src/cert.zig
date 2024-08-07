@@ -10,7 +10,6 @@ const Timer = std.time.Timer;
 
 const debug = std.debug.print;
 const assert = std.debug.assert;
-const memcmp = std.mem.eql;
 const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
@@ -256,7 +255,7 @@ pub const CriticalOptions = struct {
 
     inline fn is_valid_option(opt: []const u8) ?CriticalOptions.Tags {
         for (Self.Tags.strings, 0..) |s, i| {
-            if (memcmp(u8, s, opt)) return @enumFromInt(i);
+            if (std.mem.eql(u8, s, opt)) return @enumFromInt(i);
         }
 
         return null;
@@ -333,7 +332,7 @@ pub const Extensions = struct {
 
         outer: while (it.next()) |ext| {
             for (Self.Tags.strings, 0..) |ext_str, j| {
-                if (memcmp(u8, ext, ext_str)) {
+                if (std.mem.eql(u8, ext, ext_str)) {
                     const bit: u8 = (@as(u8, 0x01) << @as(u3, @intCast(j)));
 
                     if (ret & bit != 0)
@@ -357,7 +356,7 @@ const Principals = struct {
 
     const Self = @This();
 
-    fn iter(self: *const Self) Self.Iterator {
+    pub fn iter(self: *const Self) Self.Iterator {
         return .{ .ref = self.ref, .off = 0 };
     }
 
@@ -530,7 +529,7 @@ inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
 
 inline fn parse_magic(ref: []const u8) ?Magic {
     for (Magic.strings, 0..) |magic, i| {
-        if (memcmp(u8, magic, ref))
+        if (std.mem.eql(u8, magic, ref))
             return @enumFromInt(i);
     }
 
@@ -607,201 +606,4 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
     }
 
     return ret;
-}
-
-test "parse rsa cert" {
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
-    defer der.deinit();
-
-    switch (try Cert.from_der(&der)) {
-        .rsa => |cert| {
-            try expectEqual(cert.magic, Magic.ssh_rsa);
-            try expectEqual(cert.serial, 2);
-            try expectEqual(cert.kind, CertType.user);
-            try expect(memcmp(u8, cert.key_id, "abc"));
-
-            var it = cert.valid_principals.iter();
-            try expect(memcmp(u8, it.next().?, "root"));
-            try expect(it.done());
-
-            try expectEqual(cert.valid_after, 0);
-            try expectEqual(cert.valid_before, std.math.maxInt(u64));
-        },
-        else => return error.wrong_certificate,
-    }
-}
-
-test "parse rsa cert bad cert" {
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
-    defer der.deinit();
-
-    const len = der.ref.len;
-    der.ref.len = 100;
-
-    const cert = Cert.from_der(&der);
-
-    der.ref.len = len;
-
-    try testing.expectError(Error.MalformedString, cert);
-}
-
-test "parse ecdsa cert" {
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/ecdsa-cert.pub"));
-    defer der.deinit();
-
-    switch (try Cert.from_der(&der)) {
-        .ecdsa => |cert| {
-            try expectEqual(cert.magic, Magic.ecdsa_sha2_nistp256);
-            try expectEqual(cert.serial, 2);
-            try expectEqual(cert.kind, CertType.user);
-            try expect(memcmp(u8, cert.key_id, "abc"));
-
-            var it = cert.valid_principals.iter();
-            try expect(memcmp(u8, it.next().?, "root"));
-            try expect(it.done());
-
-            try expectEqual(cert.valid_after, 0);
-            try expectEqual(cert.valid_before, std.math.maxInt(u64));
-        },
-        else => return error.wrong_certificate,
-    }
-}
-
-test "parse ed25519 cert" {
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/ed25519-cert.pub"));
-    defer der.deinit();
-
-    switch (try Cert.from_der(&der)) {
-        .ed25519 => |cert| {
-            try expectEqual(cert.magic, Magic.ssh_ed25519);
-            try expectEqual(cert.serial, 2);
-            try expectEqual(cert.kind, CertType.user);
-
-            try expect(memcmp(u8, cert.key_id, "abc"));
-
-            var it = cert.valid_principals.iter();
-            try expect(memcmp(u8, it.next().?, "root"));
-            try expect(it.done());
-
-            try expectEqual(cert.valid_after, 0);
-            try expectEqual(cert.valid_before, std.math.maxInt(u64));
-        },
-        else => return error.wrong_certificate,
-    }
-}
-
-test "extensions iterator" {
-    // Reference
-    const extensions = [_][]const u8{
-        "permit-X11-forwarding",
-        "permit-agent-forwarding",
-        "permit-port-forwarding",
-        "permit-pty",
-        "permit-user-rc",
-    };
-
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
-    defer der.deinit();
-
-    const rsa = try RSA.from_der(&der);
-
-    var it = rsa.extensions.iter();
-
-    for (extensions) |extension| {
-        try expect(memcmp(u8, extension, it.next().?));
-    }
-
-    try expect(it.done());
-}
-
-test "extensions to bitflags" {
-    const Ext = Extensions.Tags;
-
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
-    defer der.deinit();
-
-    const rsa = try RSA.from_der(&der);
-
-    try expectEqual(
-        try rsa.extensions.to_bitflags(),
-        @intFromEnum(Ext.permit_agent_forwarding) |
-            @intFromEnum(Ext.permit_X11_forwarding) |
-            @intFromEnum(Ext.permit_user_rc) |
-            @intFromEnum(Ext.permit_port_forwarding) |
-            @intFromEnum(Ext.permit_pty),
-    );
-}
-
-test "multiple valid principals iterator" {
-    // Reference
-    const valid_principals = [_][]const u8{
-        "foo",
-        "bar",
-        "baz",
-    };
-
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/multiple-principals-cert.pub"));
-    defer der.deinit();
-
-    const rsa = try RSA.from_der(&der);
-
-    var it = rsa.valid_principals.iter();
-
-    for (valid_principals) |principal| {
-        try expect(memcmp(u8, principal, it.next().?));
-    }
-}
-
-test "critical options iterator" {
-    // Reference
-    const critical_options = [_]CriticalOption{.{
-        .kind = .force_command,
-        .value = "ls -la",
-    }};
-
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/force-command-cert.pub"));
-    defer der.deinit();
-
-    const rsa = try RSA.from_der(&der);
-
-    var it = rsa.critical_options.iter();
-
-    for (critical_options) |critical_option| {
-        const opt = it.next().?;
-
-        try expectEqual(critical_option.kind, opt.kind);
-        try expect(memcmp(u8, critical_option.value, opt.value));
-    }
-
-    try expect(it.done());
-}
-
-test "multiple critical options iterator" {
-    // Reference
-    const critical_options = [_]CriticalOption{
-        .{
-            .kind = .force_command,
-            .value = "ls -la",
-        },
-        .{
-            .kind = .source_address,
-            .value = "198.51.100.0/24,203.0.113.0/26",
-        },
-    };
-
-    var der = try PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/multiple-critical-options-cert.pub"));
-    defer der.deinit();
-
-    const rsa = try RSA.from_der(&der);
-
-    var it = rsa.critical_options.iter();
-
-    for (critical_options) |critical_option| {
-        const opt = it.next().?;
-
-        try expectEqual(critical_option.kind, opt.kind);
-        try expect(memcmp(u8, critical_option.value, opt.value));
-    }
-
-    try expect(it.done());
 }

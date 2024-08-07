@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const unit_test = b.addTest(.{
-        .root_source_file = b.path("src/cert.zig"),
+        .root_source_file = b.path("src/cert_test.zig"),
         .target = target,
         .optimize = optimize,
     });
