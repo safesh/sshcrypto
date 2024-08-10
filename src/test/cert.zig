@@ -1,5 +1,6 @@
-const ssh = @import("cert.zig");
 const std = @import("std");
+
+const ssh = @import("sshcerts");
 
 const testing = std.testing;
 const base64 = std.base64;
@@ -8,7 +9,7 @@ const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
 test "parse rsa cert" {
-    var der = try ssh.PemDecoder.init(testing.allocator, base64.standard.Decoder).decode(@embedFile("test/rsa-cert.pub"));
+    var der = try ssh.PemDecoder.init(testing.allocator, base64.standard.Decoder).decode(@embedFile("rsa-cert.pub"));
     defer der.deinit();
 
     switch (try ssh.Cert.from_der(&der)) {
@@ -33,7 +34,7 @@ test "parse rsa cert bad cert" {
     var der = try ssh.PemDecoder.init(
         testing.allocator,
         base64.standard.Decoder,
-    ).decode(@embedFile("test/rsa-cert.pub"));
+    ).decode(@embedFile("rsa-cert.pub"));
     defer der.deinit();
 
     const len = der.ref.len;
@@ -47,7 +48,7 @@ test "parse rsa cert bad cert" {
 }
 
 test "parse ecdsa cert" {
-    var der = try ssh.PemDecoder.init(testing.allocator, base64.standard.Decoder).decode(@embedFile("test/ecdsa-cert.pub"));
+    var der = try ssh.PemDecoder.init(testing.allocator, base64.standard.Decoder).decode(@embedFile("ecdsa-cert.pub"));
     defer der.deinit();
 
     switch (try ssh.Cert.from_der(&der)) {
@@ -72,7 +73,7 @@ test "parse ed25519 cert" {
     var der = try ssh.PemDecoder.init(
         testing.allocator,
         base64.standard.Decoder,
-    ).decode(@embedFile("test/ed25519-cert.pub"));
+    ).decode(@embedFile("ed25519-cert.pub"));
     defer der.deinit();
 
     switch (try ssh.Cert.from_der(&der)) {
@@ -107,7 +108,7 @@ test "extensions iterator" {
     var der = try ssh.PemDecoder.init(
         testing.allocator,
         base64.standard.Decoder,
-    ).decode(@embedFile("test/rsa-cert.pub"));
+    ).decode(@embedFile("rsa-cert.pub"));
     defer der.deinit();
 
     const rsa = try ssh.RSA.from_der(&der);
@@ -127,7 +128,7 @@ test "extensions to bitflags" {
     var der = try ssh.PemDecoder.init(
         testing.allocator,
         base64.standard.Decoder,
-    ).decode(@embedFile("test/rsa-cert.pub"));
+    ).decode(@embedFile("rsa-cert.pub"));
     defer der.deinit();
 
     const rsa = try ssh.RSA.from_der(&der);
@@ -153,7 +154,7 @@ test "multiple valid principals iterator" {
     var der = try ssh.PemDecoder.init(
         testing.allocator,
         base64.standard.Decoder,
-    ).decode(@embedFile("test/multiple-principals-cert.pub"));
+    ).decode(@embedFile("multiple-principals-cert.pub"));
     defer der.deinit();
 
     const rsa = try ssh.RSA.from_der(&der);
@@ -175,7 +176,7 @@ test "critical options iterator" {
     var der = try ssh.PemDecoder.init(
         testing.allocator,
         base64.standard.Decoder,
-    ).decode(@embedFile("test/force-command-cert.pub"));
+    ).decode(@embedFile("force-command-cert.pub"));
     defer der.deinit();
 
     const rsa = try ssh.RSA.from_der(&der);
@@ -208,7 +209,7 @@ test "multiple critical options iterator" {
     var der = try ssh.PemDecoder.init(
         testing.allocator,
         base64.standard.Decoder,
-    ).decode(@embedFile("test/multiple-critical-options-cert.pub"));
+    ).decode(@embedFile("multiple-critical-options-cert.pub"));
     defer der.deinit();
 
     const rsa = try ssh.RSA.from_der(&der);

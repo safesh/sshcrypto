@@ -1,5 +1,6 @@
 const std = @import("std");
-const cert = @import("cert.zig");
+
+const ssh = @import("sshcerts");
 
 const testing = std.testing;
 
@@ -11,7 +12,10 @@ const debug = std.debug.print;
 const MAX_RUNS: usize = 4096;
 
 test "benchmark rsa `from_bytes`" {
-    var der = try cert.PemDecoder.init(testing.allocator, Decoder).decode(@embedFile("test/rsa-cert.pub"));
+    var der = try ssh.PemDecoder.init(
+        testing.allocator,
+        Decoder,
+    ).decode(@embedFile("rsa-cert.pub"));
     defer der.deinit();
 
     var sum: u64 = 0;
@@ -19,7 +23,7 @@ test "benchmark rsa `from_bytes`" {
     var timer = try Timer.start();
 
     for (0..MAX_RUNS) |_| {
-        _ = try cert.RSA.from_bytes(der.ref);
+        _ = try ssh.RSA.from_bytes(der.ref);
 
         sum += timer.lap();
     }
