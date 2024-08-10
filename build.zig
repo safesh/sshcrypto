@@ -13,6 +13,7 @@ const TEST_CERTS_PATH: []const u8 = "tools/certs/";
 // TODO: Make this comptime
 fn get_test_certs(allocator: std.mem.Allocator) !ArrayList(Tuple(&.{ []u8, []u8 })) {
     var ret = ArrayList(Tuple(&.{ []u8, []u8 })).init(allocator);
+    errdefer ret.deinit();
 
     var certs = try std.fs.cwd().openDir("tools/certs", .{ .iterate = true });
     defer certs.close();
@@ -24,7 +25,8 @@ fn get_test_certs(allocator: std.mem.Allocator) !ArrayList(Tuple(&.{ []u8, []u8 
         if (std.mem.endsWith(u8, entry.basename, ".pub")) {
             const basename = entry.basename[0..entry.basename.len];
 
-            const name = try Allocator.dupe(allocator, u8, basename);
+            // This is fine for this usecase
+            const name = try allocator.dupe(u8, basename);
             const path = try std.mem.concat(allocator, u8, &.{
                 TEST_CERTS_PATH,
                 basename,
@@ -46,7 +48,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const certs = get_test_certs(std.heap.page_allocator) catch |err|
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    arena.deinit();
+
+    const certs = get_test_certs(arena.allocator()) catch |err|
         panic("{}", .{err});
     defer certs.deinit();
 
