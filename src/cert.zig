@@ -1,6 +1,6 @@
 //! SSH certificate parsing and verification.
 //!
-//! Support for parting DER and PEM enconded SSH certificates. PEM decoding can be done in
+//! Support for parsing DER and PEM enconded SSH certificates. PEM decoding can be done in
 //! place or not. All parsing is done in place, with zero allocations, for this,
 //! the certificate data (DER) **MUST** outlive the parsed certificate.
 

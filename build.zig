@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const mod = b.addModule("sshkeys", .{
-        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = b.pathFromRoot("src/cert.zig") } },
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = b.pathFromRoot("src/sshkeys.zig") } },
         .target = target,
         .optimize = optimize,
     });
@@ -81,8 +81,8 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Build documentation");
     {
         const docs_obj = b.addObject(.{
-            .name = "docs",
-            .root_source_file = b.path("src/cert.zig"),
+            .name = "sshkeys",
+            .root_source_file = b.path("src/sshkeys.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -93,6 +93,7 @@ pub fn build(b: *std.Build) void {
             .source_dir = docs_obj.getEmittedDocs(),
         });
 
+        docs_step.dependOn(&docs_obj.step);
         docs_step.dependOn(&install_docs.step);
     }
 

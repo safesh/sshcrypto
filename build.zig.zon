@@ -6,6 +6,7 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "src/sshkeys.zig",
         "src/cert.zig",
         "src/key.zig",
     },
