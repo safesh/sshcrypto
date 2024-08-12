@@ -1,3 +1,4 @@
 - Parse public and private keys
+- Verify certificate signature
 - Support key and certificate comments
 - Support SSH revocation lists
