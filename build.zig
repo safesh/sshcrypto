@@ -84,7 +84,7 @@ pub fn build(b: *std.Build) void {
             .name = "docs",
             .root_source_file = b.path("src/cert.zig"),
             .target = target,
-            .optimize = .Debug,
+            .optimize = optimize,
         });
 
         const install_docs = b.addInstallDirectory(.{
