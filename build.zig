@@ -99,7 +99,7 @@ pub fn build(b: *std.Build) void {
     const perf_step = b.step("perf", "Perf record");
     {
         const perf_test = b.addTest(.{
-            .root_source_file = b.path("src/bench/cert.zig"),
+            .root_source_file = b.path("src/perf/cert.zig"),
             .target = target,
             .optimize = optimize,
         });
