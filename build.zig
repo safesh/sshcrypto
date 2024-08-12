@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod = b.addModule("sshcerts", .{
+    const mod = b.addModule("sshkeys", .{
         .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = b.pathFromRoot("src/cert.zig") } },
         .target = target,
         .optimize = optimize,
@@ -63,7 +63,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
 
-        unit_test.root_module.addImport("sshcerts", mod);
+        unit_test.root_module.addImport("sshkeys", mod);
 
         for (certs.items) |cert| {
             const name, const file = cert;
@@ -81,7 +81,7 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Build documentation");
     {
         const docs_obj = b.addObject(.{
-            .name = "sshcerts",
+            .name = "docs",
             .root_source_file = b.path("src/test/cert.zig"),
             .target = target,
             .optimize = .Debug,
@@ -89,7 +89,7 @@ pub fn build(b: *std.Build) void {
 
         const install_docs = b.addInstallDirectory(.{
             .install_dir = .prefix,
-            .install_subdir = "sshcerts",
+            .install_subdir = "sshkeys",
             .source_dir = docs_obj.getEmittedDocs(),
         });
 
@@ -104,7 +104,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
 
-        perf_test.root_module.addImport("sshcerts", mod);
+        perf_test.root_module.addImport("sshkeys", mod);
 
         for (certs.items) |cert| {
             const name, const file = cert;
