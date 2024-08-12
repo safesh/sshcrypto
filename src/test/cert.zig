@@ -9,7 +9,10 @@ const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
 test "parse rsa cert" {
-    var der = try ssh.PemDecoder.init(testing.allocator, base64.standard.Decoder).decode(@embedFile("rsa-cert.pub"));
+    var der = try ssh.PemDecoder.init(
+        testing.allocator,
+        base64.standard.Decoder,
+    ).decode(@embedFile("rsa-cert.pub"));
     defer der.deinit();
 
     switch (try ssh.Cert.from_der(&der)) {

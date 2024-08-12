@@ -5,7 +5,6 @@ const base64 = std.base64;
 const testing = std.testing;
 
 const Allocator = std.mem.Allocator;
-const Decoder = std.base64.standard.Decoder;
 const Timer = std.time.Timer;
 
 const debug = std.debug.print;
@@ -25,7 +24,7 @@ pub const Error = error{
     UnkownExtension,
 } || std.base64.Error || Allocator.Error;
 
-fn GenericIteratorInner(comptime T: type, parse_value: anytype) type {
+fn GenericIteratorImpl(comptime T: type, parse_value: anytype) type {
     return struct {
         ref: []const u8,
         off: usize,
@@ -59,7 +58,7 @@ fn GenericIterator(comptime parse_value: anytype) type {
         else => @compileError("Expected fn"),
     };
 
-    return GenericIteratorInner(T, parse_value);
+    return GenericIteratorImpl(T, parse_value);
 }
 
 fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [meta.fields(T).len][]const u8 {
