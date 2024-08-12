@@ -82,14 +82,14 @@ pub fn build(b: *std.Build) void {
     {
         const docs_obj = b.addObject(.{
             .name = "docs",
-            .root_source_file = b.path("src/test/cert.zig"),
+            .root_source_file = b.path("src/cert.zig"),
             .target = target,
             .optimize = .Debug,
         });
 
         const install_docs = b.addInstallDirectory(.{
             .install_dir = .prefix,
-            .install_subdir = "sshkeys",
+            .install_subdir = "docs",
             .source_dir = docs_obj.getEmittedDocs(),
         });
 
