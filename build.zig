@@ -8,32 +8,35 @@ const Tuple = std.meta.Tuple;
 const Allocator = std.mem.Allocator;
 
 const PERF_EVENTS: []const u8 = "cache-references,cache-misses,cycles,instructions,branches,faults,migrations";
+
 const TEST_CERTS_PATH: []const u8 = "tools/certs/";
+const TEST_KEYS_PATH: []const u8 = "tools/keys/";
 
 // TODO: Make this comptime
-fn get_test_certs(allocator: std.mem.Allocator) !ArrayList(Tuple(&.{ []u8, []u8 })) {
+fn get_test_assets(allocator: std.mem.Allocator, path: []const u8) !ArrayList(Tuple(&.{ []u8, []u8 })) {
     var ret = ArrayList(Tuple(&.{ []u8, []u8 })).init(allocator);
     errdefer ret.deinit();
 
-    var certs = try std.fs.cwd().openDir("tools/certs", .{ .iterate = true });
+    var certs = try std.fs.cwd().openDir(path, .{ .iterate = true });
     defer certs.close();
 
     var walker = try certs.walk(allocator);
     defer walker.deinit();
 
-    while (try walker.next()) |entry|
-        if (std.mem.endsWith(u8, entry.basename, ".pub")) {
-            const basename = entry.basename[0..entry.basename.len];
+    while (try walker.next()) |entry| {
+        if (std.mem.endsWith(u8, ".sh", entry.basename)) continue;
 
-            // This is fine for this usecase
-            const name = try allocator.dupe(u8, basename);
-            const path = try std.mem.concat(allocator, u8, &.{
-                TEST_CERTS_PATH,
-                basename,
-            });
+        const basename = entry.basename[0..entry.basename.len];
 
-            try ret.append(.{ name, path });
-        };
+        // This is fine for this usecase
+        const n = try allocator.dupe(u8, basename);
+        const p = try std.mem.concat(allocator, u8, &.{
+            path,
+            basename,
+        });
+
+        try ret.append(.{ n, p });
+    }
 
     return ret;
 }
@@ -51,31 +54,59 @@ pub fn build(b: *std.Build) void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     arena.deinit();
 
-    const certs = get_test_certs(arena.allocator()) catch |err|
+    const certs = get_test_assets(arena.allocator(), TEST_CERTS_PATH) catch |err|
         panic("{}", .{err});
     defer certs.deinit();
 
+    const keys = get_test_assets(arena.allocator(), TEST_KEYS_PATH) catch |err|
+        panic("{}", .{err});
+    defer certs.deinit();
+
+    for (keys.items) |key| {
+        const name, const path = key;
+        std.debug.print("{s} {s}", .{ name, path });
+    }
+
     const test_step = b.step("test", "Run unit tests");
     {
-        const unit_test = b.addTest(.{
+        const unit_test_cert = b.addTest(.{
             .root_source_file = b.path("src/test/cert.zig"),
             .target = target,
             .optimize = optimize,
         });
 
-        unit_test.root_module.addImport("sshkeys", mod);
+        unit_test_cert.root_module.addImport("sshkeys", mod);
 
         for (certs.items) |cert| {
             const name, const file = cert;
-            unit_test.root_module.addAnonymousImport(
+            unit_test_cert.root_module.addAnonymousImport(
                 name,
                 .{ .root_source_file = b.path(file) },
             );
         }
 
-        const run_test = b.addRunArtifact(unit_test);
+        const run_test_cert = b.addRunArtifact(unit_test_cert);
 
-        test_step.dependOn(&run_test.step);
+        const unit_test_key = b.addTest(.{
+            .root_source_file = b.path("src/test/key.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        unit_test_key.root_module.addImport("sshkeys", mod);
+
+        for (keys.items) |cert| {
+            const name, const file = cert;
+            unit_test_key.root_module.addAnonymousImport(
+                name,
+                .{ .root_source_file = b.path(file) },
+            );
+        }
+
+        const run_test_key = b.addRunArtifact(unit_test_key);
+
+        test_step.dependOn(&run_test_cert.step);
+        test_step.dependOn(&run_test_key.step);
     }
 
     const docs_step = b.step("docs", "Build documentation");
