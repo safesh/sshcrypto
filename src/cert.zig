@@ -90,61 +90,65 @@ fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [meta.fields(T).len][]co
     return ret;
 }
 
-/// Decode a certificate in PEM format to DER format. Memory is owned by Der,
-/// with refrences to the original data which **SHOULD** outlive Der.
-pub const PemDecoder = struct {
-    allocator: Allocator,
-    decoder: base64.Base64Decoder,
-
-    const Self = @This();
-
-    pub const Der = struct {
-        allocator: Allocator,
-        magic: Magic,
-        ref: []u8,
-        comment: []const u8,
-
-        pub fn deinit(self: *Self.Der) void {
-            self.allocator.free(self.ref);
-        }
-    };
-
-    pub fn init(allocator: Allocator, decoder: base64.Base64Decoder) Self {
-        return .{
-            .allocator = allocator,
-            .decoder = decoder,
-        };
-    }
-
-    pub fn decode(self: *const Self, src: []const u8) Error!Self.Der {
-        var it = std.mem.tokenizeAny(u8, src, " ");
-
-        const magic = parse_magic(
-            it.next() orelse return error.InvalidFileFormat,
-        ) orelse
-            return error.InvalidMagicString;
-
-        const ref = it.next() orelse
-            return error.InvalidFileFormat;
-
-        const comment = it.next() orelse
-            return error.InvalidFileFormat;
-
-        const len = try self.decoder.calcSizeForSlice(ref);
-
-        const der = try self.allocator.alloc(u8, len);
-        errdefer self.allocator.free(der);
-
-        try self.decoder.decode(der, ref);
-
-        return .{
-            .allocator = self.allocator,
-            .magic = magic,
-            .ref = der,
-            .comment = comment,
-        };
-    }
+pub const Pem = struct {
+    magic: []const u8,
+    der: []u8,
+    comment: []const u8,
 };
+
+// pub const PemDecoder = struct {
+//     allocator: Allocator,
+//     decoder: base64.Base64Decoder,
+//
+//     const Self = @This();
+//
+//     pub const Der = struct {
+//         allocator: Allocator,
+//         magic: Magic,
+//         ref: []u8,
+//         comment: []const u8,
+//
+//         pub fn deinit(self: *Self.Der) void {
+//             self.allocator.free(self.ref);
+//         }
+//     };
+//
+//     pub fn init(allocator: Allocator, decoder: base64.Base64Decoder) Self {
+//         return .{
+//             .allocator = allocator,
+//             .decoder = decoder,
+//         };
+//     }
+//
+//     pub fn decode(self: *const Self, src: []const u8) Error!Self.Der {
+//         var it = std.mem.tokenizeAny(u8, src, " ");
+//
+//         const magic = parse_magic(
+//             it.next() orelse return error.InvalidFileFormat,
+//         ) orelse
+//             return error.InvalidMagicString;
+//
+//         const ref = it.next() orelse
+//             return error.InvalidFileFormat;
+//
+//         const comment = it.next() orelse
+//             return error.InvalidFileFormat;
+//
+//         const len = try self.decoder.calcSizeForSlice(ref);
+//
+//         const der = try self.allocator.alloc(u8, len);
+//         errdefer self.allocator.free(der);
+//
+//         try self.decoder.decode(der, ref);
+//
+//         return .{
+//             .allocator = self.allocator,
+//             .magic = magic,
+//             .ref = der,
+//             .comment = comment,
+//         };
+//     }
+// };
 
 pub const Cert = union(enum) {
     rsa: RSA,
@@ -156,12 +160,15 @@ pub const Cert = union(enum) {
 
     // TODO: from bytes...
 
-    pub fn from_der(der: *const PemDecoder.Der) Error!Self {
-        return switch (der.magic) {
+    pub fn from_pem(pem: *const Pem) Error!Self {
+        const magic = parse_magic(pem.magic) orelse
+            return Error.InvalidMagicString;
+
+        return switch (magic) {
             .ssh_rsa,
             .rsa_sha2_256,
             .rsa_sha2_512,
-            => .{ .rsa = try RSA.from_der(der) },
+            => .{ .rsa = try RSA.from_pem(pem) },
 
             // .ssh_dsa,
             // => .{ .dsa = try DSA.from(der, m) },
@@ -169,10 +176,10 @@ pub const Cert = union(enum) {
             .ecdsa_sha2_nistp256,
             .ecdsa_sha2_nistp384,
             .ecdsa_sha2_nistp521,
-            => .{ .ecdsa = try ECDSA.from_der(der) },
+            => .{ .ecdsa = try ECDSA.from_pem(pem) },
 
             .ssh_ed25519,
-            => .{ .ed25519 = try ED25519.from_der(der) },
+            => .{ .ed25519 = try ED25519.from_pem(pem) },
 
             else => std.debug.panic("DSA certificates are not supported for now", .{}),
         };
@@ -400,8 +407,11 @@ pub const RSA = struct {
         }
     }
 
-    pub fn from_der(der: *const PemDecoder.Der) Error!RSA {
-        return from(der.magic, der.ref);
+    pub fn from_pem(pem: *const Pem) Error!RSA {
+        return from(
+            parse_magic(pem.magic) orelse return Error.InvalidMagicString,
+            pem.der,
+        );
     }
 
     pub fn from_bytes(src: []const u8) Error!RSA {
@@ -458,8 +468,11 @@ pub const ECDSA = struct {
         }
     }
 
-    pub fn from_der(der: *const PemDecoder.Der) Error!ECDSA {
-        return from(der.magic, der.ref);
+    pub fn from_pem(pem: *const Pem) Error!ECDSA {
+        return from(
+            parse_magic(pem.magic) orelse return Error.InvalidMagicString,
+            pem.der,
+        );
     }
 
     pub fn from_bytes(src: []const u8) Error!ECDSA {
@@ -494,8 +507,11 @@ pub const ED25519 = struct {
         }
     }
 
-    pub fn from_der(der: *const PemDecoder.Der) Error!ED25519 {
-        return from(der.magic, der.ref);
+    pub fn from_pem(pem: *const Pem) Error!ED25519 {
+        return from(
+            parse_magic(pem.magic) orelse return Error.InvalidMagicString,
+            pem.der,
+        );
     }
 
     pub fn from_bytes(src: []const u8) Error!ED25519 {
@@ -580,7 +596,7 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
 
     var i: usize = Magic.strings[@intFromEnum(magic)].len + @sizeOf(u32);
 
-    inline for (meta.fields(T)) |f| {
+    inline for (comptime meta.fields(T)) |f| {
         const ref = buf[i..];
 
         const next, const val = switch (f.type) {

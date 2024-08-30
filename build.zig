@@ -12,33 +12,68 @@ const PERF_EVENTS: []const u8 = "cache-references,cache-misses,cycles,instructio
 const TEST_CERTS_PATH: []const u8 = "tools/certs/";
 const TEST_KEYS_PATH: []const u8 = "tools/keys/";
 
+const TestAssets = ArrayList(Tuple(&.{ []u8, []u8 }));
+
 // TODO: Make this comptime
-fn get_test_assets(allocator: std.mem.Allocator, path: []const u8) !ArrayList(Tuple(&.{ []u8, []u8 })) {
+fn get_test_assets(allocator: std.mem.Allocator, path: []const u8) !TestAssets {
     var ret = ArrayList(Tuple(&.{ []u8, []u8 })).init(allocator);
-    errdefer ret.deinit();
 
-    var certs = try std.fs.cwd().openDir(path, .{ .iterate = true });
-    defer certs.close();
+    var assets = try std.fs.cwd().openDir(path, .{ .iterate = true });
+    defer assets.close();
 
-    var walker = try certs.walk(allocator);
-    defer walker.deinit();
+    var walker = try assets.walk(allocator);
 
     while (try walker.next()) |entry| {
         if (std.mem.endsWith(u8, ".sh", entry.basename)) continue;
 
         const basename = entry.basename[0..entry.basename.len];
 
-        // This is fine for this usecase
-        const n = try allocator.dupe(u8, basename);
-        const p = try std.mem.concat(allocator, u8, &.{
-            path,
-            basename,
+        try ret.append(.{
+            // This is fine for this use-case
+            try allocator.dupe(u8, basename), // name
+            try std.mem.concat(allocator, u8, &.{ // path
+                path,
+                basename,
+            }),
         });
-
-        try ret.append(.{ n, p });
     }
 
     return ret;
+}
+
+const Test = struct {
+    root_source_file: std.Build.LazyPath,
+
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+
+    mod: ?*std.Build.Module,
+    mod_name: ?[]const u8,
+
+    assets: ?*const TestAssets,
+};
+
+fn add_test(b: *std.Build, step: *std.Build.Step, t: Test) !void {
+    const test_case = b.addTest(.{
+        .root_source_file = t.root_source_file,
+        .target = t.target,
+        .optimize = t.optimize,
+    });
+
+    if (t.mod) |mod|
+        test_case.root_module.addImport(t.mod_name.?, mod);
+
+    if (t.assets) |assets| for (assets.items) |cert| {
+        const name, const file = cert;
+        test_case.root_module.addAnonymousImport(
+            name,
+            .{ .root_source_file = b.path(file) },
+        );
+    };
+
+    const run_test_case = b.addRunArtifact(test_case);
+
+    step.dependOn(&run_test_case.step);
 }
 
 pub fn build(b: *std.Build) void {
@@ -46,7 +81,12 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const mod = b.addModule("sshkeys", .{
-        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = b.pathFromRoot("src/sshkeys.zig") } },
+        .root_source_file = .{
+            .src_path = .{
+                .owner = b,
+                .sub_path = b.pathFromRoot("src/sshkeys.zig"),
+            },
+        },
         .target = target,
         .optimize = optimize,
     });
@@ -54,59 +94,40 @@ pub fn build(b: *std.Build) void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     arena.deinit();
 
-    const certs = get_test_assets(arena.allocator(), TEST_CERTS_PATH) catch |err|
-        panic("{}", .{err});
-    defer certs.deinit();
+    const certs = get_test_assets(arena.allocator(), TEST_CERTS_PATH) catch
+        @panic("Fail to get test certs assets");
 
-    const keys = get_test_assets(arena.allocator(), TEST_KEYS_PATH) catch |err|
-        panic("{}", .{err});
-    defer certs.deinit();
-
-    for (keys.items) |key| {
-        const name, const path = key;
-        std.debug.print("{s} {s}", .{ name, path });
-    }
+    const keys = get_test_assets(arena.allocator(), TEST_KEYS_PATH) catch
+        @panic("Fail to get test keys assets");
 
     const test_step = b.step("test", "Run unit tests");
     {
-        const unit_test_cert = b.addTest(.{
+        add_test(b, test_step, .{
             .root_source_file = b.path("src/test/cert.zig"),
             .target = target,
             .optimize = optimize,
-        });
+            .mod = mod,
+            .mod_name = "sshkeys",
+            .assets = &certs,
+        }) catch @panic("OOM");
 
-        unit_test_cert.root_module.addImport("sshkeys", mod);
-
-        for (certs.items) |cert| {
-            const name, const file = cert;
-            unit_test_cert.root_module.addAnonymousImport(
-                name,
-                .{ .root_source_file = b.path(file) },
-            );
-        }
-
-        const run_test_cert = b.addRunArtifact(unit_test_cert);
-
-        const unit_test_key = b.addTest(.{
+        add_test(b, test_step, .{
             .root_source_file = b.path("src/test/key.zig"),
             .target = target,
             .optimize = optimize,
-        });
+            .mod = mod,
+            .mod_name = "sshkeys",
+            .assets = &keys,
+        }) catch @panic("OOM");
 
-        unit_test_key.root_module.addImport("sshkeys", mod);
-
-        for (keys.items) |cert| {
-            const name, const file = cert;
-            unit_test_key.root_module.addAnonymousImport(
-                name,
-                .{ .root_source_file = b.path(file) },
-            );
-        }
-
-        const run_test_key = b.addRunArtifact(unit_test_key);
-
-        test_step.dependOn(&run_test_cert.step);
-        test_step.dependOn(&run_test_key.step);
+        add_test(b, test_step, .{
+            .root_source_file = b.path("src/test/decode.zig"),
+            .target = target,
+            .optimize = optimize,
+            .mod = mod,
+            .mod_name = "sshkeys",
+            .assets = &keys,
+        }) catch @panic("OOM");
     }
 
     const docs_step = b.step("docs", "Build documentation");

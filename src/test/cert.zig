@@ -1,6 +1,8 @@
 const std = @import("std");
 
-const sshcert = @import("sshkeys").cert;
+const sshk = @import("sshkeys");
+
+const sshcert = sshk.cert;
 
 const testing = std.testing;
 const base64 = std.base64;
@@ -8,14 +10,16 @@ const base64 = std.base64;
 const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
+const Decoder = sshk.Decoder(sshcert.Pem);
+
 test "parse rsa cert" {
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("rsa-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    switch (try sshcert.Cert.from_der(&der)) {
+    switch (try sshcert.Cert.from_pem(&pem)) {
         .rsa => |cert| {
             try expectEqual(cert.magic, sshcert.Magic.ssh_rsa);
             try expectEqual(cert.serial, 2);
@@ -34,27 +38,30 @@ test "parse rsa cert" {
 }
 
 test "parse rsa cert bad cert" {
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("rsa-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    const len = der.ref.len;
-    der.ref.len = 100;
+    const len = pem.der.len;
+    pem.der.len = 100;
 
-    const cert = sshcert.Cert.from_der(&der);
+    const cert = sshcert.Cert.from_pem(&pem);
 
-    der.ref.len = len;
+    pem.der.len = len;
 
     try testing.expectError(sshcert.Error.MalformedString, cert);
 }
 
 test "parse ecdsa cert" {
-    var der = try sshcert.PemDecoder.init(testing.allocator, base64.standard.Decoder).decode(@embedFile("ecdsa-cert.pub"));
-    defer der.deinit();
+    var pem = try Decoder.init(
+        testing.allocator,
+        base64.standard.Decoder,
+    ).decode(@embedFile("ecdsa-cert.pub"));
+    defer std.testing.allocator.free(pem.der);
 
-    switch (try sshcert.Cert.from_der(&der)) {
+    switch (try sshcert.Cert.from_pem(&pem)) {
         .ecdsa => |cert| {
             try expectEqual(cert.magic, sshcert.Magic.ecdsa_sha2_nistp256);
             try expectEqual(cert.serial, 2);
@@ -73,13 +80,13 @@ test "parse ecdsa cert" {
 }
 
 test "parse ed25519 cert" {
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("ed25519-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    switch (try sshcert.Cert.from_der(&der)) {
+    switch (try sshcert.Cert.from_pem(&pem)) {
         .ed25519 => |cert| {
             try expectEqual(cert.magic, sshcert.Magic.ssh_ed25519);
             try expectEqual(cert.serial, 2);
@@ -108,13 +115,13 @@ test "extensions iterator" {
         "permit-user-rc",
     };
 
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("rsa-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    const rsa = try sshcert.RSA.from_der(&der);
+    const rsa = try sshcert.RSA.from_pem(&pem);
 
     var it = rsa.extensions.iter();
 
@@ -128,13 +135,13 @@ test "extensions iterator" {
 test "extensions to bitflags" {
     const Ext = sshcert.Extensions.Tags;
 
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("rsa-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    const rsa = try sshcert.RSA.from_der(&der);
+    const rsa = try sshcert.RSA.from_pem(&pem);
 
     try expectEqual(
         try rsa.extensions.to_bitflags(),
@@ -154,13 +161,13 @@ test "multiple valid principals iterator" {
         "baz",
     };
 
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("multiple-principals-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    const rsa = try sshcert.RSA.from_der(&der);
+    const rsa = try sshcert.RSA.from_pem(&pem);
 
     var it = rsa.valid_principals.iter();
 
@@ -176,13 +183,13 @@ test "critical options iterator" {
         .value = "ls -la",
     }};
 
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("force-command-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    const rsa = try sshcert.RSA.from_der(&der);
+    const rsa = try sshcert.RSA.from_pem(&pem);
 
     var it = rsa.critical_options.iter();
 
@@ -209,13 +216,13 @@ test "multiple critical options iterator" {
         },
     };
 
-    var der = try sshcert.PemDecoder.init(
+    var pem = try Decoder.init(
         testing.allocator,
         base64.standard.Decoder,
     ).decode(@embedFile("multiple-critical-options-cert.pub"));
-    defer der.deinit();
+    defer std.testing.allocator.free(pem.der);
 
-    const rsa = try sshcert.RSA.from_der(&der);
+    const rsa = try sshcert.RSA.from_pem(&pem);
 
     var it = rsa.critical_options.iter();
 

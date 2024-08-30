@@ -1,10 +1,14 @@
 const std = @import("std");
 
-test "a" {
-    const public = @embedFile("rsa-key.pub");
+const sshkey = @import("sshkeys").key;
 
-    const private = @embedFile("rsa-key");
+test "decode public key" {
+    var der = try sshkey.PemDecoder.init(
+        std.testing.allocator,
+        std.base64.standard.Decoder,
+    ).decode(@embedFile("rsa-key.pub"));
 
-    std.debug.print("public key: {s}", .{public});
-    std.debug.print("private key: {s}", .{private});
+    defer der.deinit();
+
+    std.debug.print("{s}\n{s}\n{s}", .{ der.magic, der.ref, der.comment });
 }
