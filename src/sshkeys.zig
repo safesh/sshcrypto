@@ -6,17 +6,21 @@ pub const key = @import("key.zig");
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
-const Base64Decoder = std.base64.Base64Decoder;
 
+const Base64Decoder = std.base64.Base64Decoder;
+const Base64Encoder = std.base64.Base64Encoder;
+
+// TODO: Map errors
 pub const Error = error{
     InvalidFileFormat,
 } || std.base64.Error || Allocator.Error;
 
 // TODO: AutoDecoder
 
-/// Decode a certificate in PEM format to DER format.
+/// Decode T from PEM to DER.
 ///
-/// TODO: Memory is owned by Der, with refrences to the original data which **SHOULD** outlive Der.
+/// TODO: Memory is owned by Der, with refrences to the original data which
+/// **SHOULD** outlive Der.
 pub fn Decoder(comptime T: type) type {
     if (@typeInfo(T) != .Struct)
         @compileError("Expected struct");
@@ -27,14 +31,38 @@ pub fn Decoder(comptime T: type) type {
 
         const Self = @This();
 
-        pub fn decode_in_place(decoder: Base64Decoder, src: []u8) !T {
-            var pem = try Self.parse_fields(src);
+        /// Unmanaged data with references to data that *SHOULD* outlive it.
+        fn Unmanaged(comptime U: type) type {
+            return struct {
+                data: U,
+            };
+        }
 
-            const len = try decoder.calcSizeForSlice(pem.der);
+        /// Managed data with owned memory.
+        fn Managed(comptime U: type) type {
+            return struct {
+                allocator: Allocator,
+                data: U,
 
-            try decoder.decode(pem.der[0..len], pem.der);
+                pub fn deinit(self: *const @This()) void {
+                    self.allocator.free(self.data.der);
+                }
+            };
+        }
 
-            pem.der.len = len;
+        /// Decode T from PEM to DER. This is done in-place, without allocating
+        /// memory, changing the reference data. Referenced data must outlive
+        /// this.
+        pub fn decode_in_place(decoder: Base64Decoder, src: []u8) !Unmanaged(T) {
+            var pem: Self.Unmanaged(T) = .{
+                .data = try Self.parse_fields(src),
+            };
+
+            const len = try decoder.calcSizeForSlice(pem.data.der);
+
+            try decoder.decode(pem.data.der[0..len], pem.data.der);
+
+            pem.data.der.len = len;
 
             return pem;
         }
@@ -65,23 +93,22 @@ pub fn Decoder(comptime T: type) type {
             return ret;
         }
 
-        pub fn decode(self: *const Self, src: []const u8) !T {
-            var pem = try Self.parse_fields(src);
+        pub fn decode(self: *const Self, src: []const u8) !Managed(T) {
+            var pem: Self.Managed(T) = .{
+                .allocator = self.allocator,
+                .data = try Self.parse_fields(src),
+            };
 
-            const len = try self.decoder.calcSizeForSlice(pem.der);
+            const len = try self.decoder.calcSizeForSlice(pem.data.der);
 
             const der = try self.allocator.alloc(u8, len);
             errdefer self.allocator.free(der);
 
-            try self.decoder.decode(der, pem.der);
+            try self.decoder.decode(der, pem.data.der);
 
-            pem.der = der;
+            pem.data.der = der;
 
             return pem;
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.allocator.deinit();
         }
     };
 }
