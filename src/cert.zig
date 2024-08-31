@@ -6,7 +6,7 @@
 
 const std = @import("std");
 const common = @import("common.zig");
-const Rrf4251 = common.Rfc4251;
+const Rfc4251 = common.Rfc4251;
 
 const meta = std.meta;
 const base64 = std.base64;
@@ -38,7 +38,7 @@ fn GenericIteratorImpl(comptime T: type, parse_value: anytype) type {
         pub fn next(self: *Self) T {
             if (self.done()) return null;
 
-            const off, const ret = Rrf4251.parse_string(self.ref[self.off..]) catch
+            const off, const ret = Rfc4251.parse_string(self.ref[self.off..]) catch
                 return null;
 
             self.off += off;
@@ -180,10 +180,10 @@ pub const CriticalOptions = struct {
                 const opt = Self.is_valid_option(key) orelse
                     return null;
 
-                const next, const buf = Rrf4251.parse_string(ref[off.*..]) catch
+                const next, const buf = Rfc4251.parse_string(ref[off.*..]) catch
                     return null;
 
-                _, const value = Rrf4251.parse_string(buf) catch
+                _, const value = Rfc4251.parse_string(buf) catch
                     return null;
 
                 off.* += next;
@@ -340,7 +340,7 @@ pub const RSA = struct {
     }
 
     pub fn from_bytes(src: []const u8) Error!RSA {
-        _, const str = try Rrf4251.parse_string(src);
+        _, const str = try Rfc4251.parse_string(src);
 
         return Self.from(try Magic.from_bytes(str), src);
     }
@@ -377,7 +377,7 @@ pub const ECDSA = struct {
     }
 
     pub fn from_bytes(src: []const u8) Error!ECDSA {
-        _, const str = try Rrf4251.parse_string(src);
+        _, const str = try Rfc4251.parse_string(src);
 
         return Self.from(try Magic.from_bytes(str), src);
     }
@@ -413,7 +413,7 @@ pub const ED25519 = struct {
     }
 
     pub fn from_bytes(src: []const u8) Error!ED25519 {
-        _, const magic = try Rrf4251.parse_string(src);
+        _, const magic = try Rfc4251.parse_string(src);
 
         return Self.from(try Magic.from_bytes(magic), src);
     }
@@ -428,25 +428,25 @@ fn Cont(comptime T: type) type {
 }
 
 inline fn parse_cert_type(ref: []const u8) Error!Cont(CertType) {
-    const next, const val = try Rrf4251.parse_int(u32, ref);
+    const next, const val = try Rfc4251.parse_int(u32, ref);
 
     return .{ next, @enumFromInt(val) };
 }
 
 inline fn parse_critical_options(buf: []const u8) Error!Cont(CriticalOptions) {
-    const next, const ref = try Rrf4251.parse_string(buf);
+    const next, const ref = try Rfc4251.parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
 
 inline fn parse_principals(buf: []const u8) Error!Cont(Principals) {
-    const next, const ref = try Rrf4251.parse_string(buf);
+    const next, const ref = try Rfc4251.parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
 
 inline fn parse_extensions(buf: []const u8) Error!Cont(Extensions) {
-    const next, const ref = try Rrf4251.parse_string(buf);
+    const next, const ref = try Rfc4251.parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
@@ -462,9 +462,9 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
         const ref = buf[i..];
 
         const next, const val = switch (f.type) {
-            []const u8 => try Rrf4251.parse_string(ref),
+            []const u8 => try Rfc4251.parse_string(ref),
 
-            u64 => try Rrf4251.parse_int(u64, ref),
+            u64 => try Rfc4251.parse_int(u64, ref),
 
             // RFC-4251 uint32
             CertType => try parse_cert_type(ref),
