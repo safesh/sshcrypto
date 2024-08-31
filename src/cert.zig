@@ -82,8 +82,7 @@ pub const Cert = union(enum) {
     // TODO: from bytes...
 
     pub fn from_pem(pem: *const Pem) Error!Self {
-        const magic = parse_magic(pem.magic) orelse
-            return Error.InvalidMagicString;
+        const magic = try Magic.from_bytes(pem.magic);
 
         return switch (magic) {
             .ssh_rsa,
@@ -121,8 +120,16 @@ pub const Magic = enum(u3) {
 
     const strings = common.enum_to_str(Magic, "-cert-v01@openssh.com");
 
-    fn as_string(self: *const Self) []const u8 {
+    pub fn as_string(self: *const Self) []const u8 {
         return strings[@intFromEnum(self.*)];
+    }
+
+    pub fn from_bytes(src: []const u8) !Magic {
+        for (Self.strings, 0..) |magic, i|
+            if (std.mem.eql(u8, magic, src))
+                return @enumFromInt(i);
+
+        return Error.InvalidMagicString;
     }
 };
 
@@ -187,9 +194,9 @@ pub const CriticalOptions = struct {
     );
 
     inline fn is_valid_option(opt: []const u8) ?CriticalOptions.Tags {
-        for (Self.Tags.strings, 0..) |s, i| {
-            if (std.mem.eql(u8, s, opt)) return @enumFromInt(i);
-        }
+        for (Self.Tags.strings, 0..) |s, i|
+            if (std.mem.eql(u8, s, opt))
+                return @enumFromInt(i);
 
         return null;
     }
@@ -329,16 +336,13 @@ pub const RSA = struct {
     }
 
     pub fn from_pem(pem: *const Pem) Error!RSA {
-        return from(
-            parse_magic(pem.magic) orelse return Error.InvalidMagicString,
-            pem.der,
-        );
+        return Self.from(try Magic.from_bytes(pem.magic), pem.der);
     }
 
     pub fn from_bytes(src: []const u8) Error!RSA {
         _, const str = try Rrf4251.parse_string(src);
 
-        return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
+        return Self.from(try Magic.from_bytes(str), src);
     }
 };
 
@@ -369,16 +373,13 @@ pub const ECDSA = struct {
     }
 
     pub fn from_pem(pem: *const Pem) Error!ECDSA {
-        return from(
-            parse_magic(pem.magic) orelse return Error.InvalidMagicString,
-            pem.der,
-        );
+        return Self.from(try Magic.from_bytes(pem.magic), pem.der);
     }
 
     pub fn from_bytes(src: []const u8) Error!ECDSA {
         _, const str = try Rrf4251.parse_string(src);
 
-        return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
+        return Self.from(try Magic.from_bytes(str), src);
     }
 };
 
@@ -408,16 +409,13 @@ pub const ED25519 = struct {
     }
 
     pub fn from_pem(pem: *const Pem) Error!ED25519 {
-        return from(
-            parse_magic(pem.magic) orelse return Error.InvalidMagicString,
-            pem.der,
-        );
+        return Self.from(try Magic.from_bytes(pem.magic), pem.der);
     }
 
     pub fn from_bytes(src: []const u8) Error!ED25519 {
-        _, const str = try Rrf4251.parse_string(src);
+        _, const magic = try Rrf4251.parse_string(src);
 
-        return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
+        return Self.from(try Magic.from_bytes(magic), src);
     }
 };
 
@@ -427,15 +425,6 @@ fn Cont(comptime T: type) type {
         usize,
         T,
     };
-}
-
-inline fn parse_magic(ref: []const u8) ?Magic {
-    for (Magic.strings, 0..) |magic, i| {
-        if (std.mem.eql(u8, magic, ref))
-            return @enumFromInt(i);
-    }
-
-    return null;
 }
 
 inline fn parse_cert_type(ref: []const u8) Error!Cont(CertType) {
