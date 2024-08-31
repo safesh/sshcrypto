@@ -5,6 +5,8 @@
 //! the certificate data (DER) **MUST** outlive the parsed certificate.
 
 const std = @import("std");
+const common = @import("common.zig");
+const Rrf4251 = common.Rfc4251;
 
 const meta = std.meta;
 const base64 = std.base64;
@@ -21,14 +23,10 @@ const expect = std.testing.expect;
 pub const Error = error{
     InvalidFileFormat,
     InvalidMagicString,
-    /// Invalid RFC-4251 integer
-    MalformedInteger,
-    /// Invalid RFC-4251 string
-    MalformedString,
     /// As per spec, repeated extension are not allowed.
     RepeatedExtension,
     UnkownExtension,
-} || std.base64.Error || Allocator.Error;
+} || std.base64.Error || Allocator.Error || common.Error;
 
 fn GenericIteratorImpl(comptime T: type, parse_value: anytype) type {
     return struct {
@@ -40,7 +38,7 @@ fn GenericIteratorImpl(comptime T: type, parse_value: anytype) type {
         pub fn next(self: *Self) T {
             if (self.done()) return null;
 
-            const off, const ret = parse_string(self.ref[self.off..]) catch
+            const off, const ret = Rrf4251.parse_string(self.ref[self.off..]) catch
                 return null;
 
             self.off += off;
@@ -67,88 +65,11 @@ fn GenericIterator(comptime parse_value: anytype) type {
     return GenericIteratorImpl(T, parse_value);
 }
 
-fn enum_to_ssh_str(comptime T: type, sufix: []const u8) [meta.fields(T).len][]const u8 {
-    if (@typeInfo(T) != .Enum)
-        @compileError("Expected enum");
-
-    const fields = meta.fields(T);
-
-    comptime var ret: [fields.len][]const u8 = undefined;
-
-    inline for (fields, &ret) |field, *r| {
-        const U = [field.name.len]u8;
-
-        comptime var name: U = std.mem.zeroes(U);
-
-        inline for (field.name, &name) |c, *n| {
-            n.* = if (c == '_') '-' else c;
-        }
-
-        r.* = name ++ sufix;
-    }
-
-    return ret;
-}
-
 pub const Pem = struct {
     magic: []const u8,
     der: []u8,
     comment: []const u8,
 };
-
-// pub const PemDecoder = struct {
-//     allocator: Allocator,
-//     decoder: base64.Base64Decoder,
-//
-//     const Self = @This();
-//
-//     pub const Der = struct {
-//         allocator: Allocator,
-//         magic: Magic,
-//         ref: []u8,
-//         comment: []const u8,
-//
-//         pub fn deinit(self: *Self.Der) void {
-//             self.allocator.free(self.ref);
-//         }
-//     };
-//
-//     pub fn init(allocator: Allocator, decoder: base64.Base64Decoder) Self {
-//         return .{
-//             .allocator = allocator,
-//             .decoder = decoder,
-//         };
-//     }
-//
-//     pub fn decode(self: *const Self, src: []const u8) Error!Self.Der {
-//         var it = std.mem.tokenizeAny(u8, src, " ");
-//
-//         const magic = parse_magic(
-//             it.next() orelse return error.InvalidFileFormat,
-//         ) orelse
-//             return error.InvalidMagicString;
-//
-//         const ref = it.next() orelse
-//             return error.InvalidFileFormat;
-//
-//         const comment = it.next() orelse
-//             return error.InvalidFileFormat;
-//
-//         const len = try self.decoder.calcSizeForSlice(ref);
-//
-//         const der = try self.allocator.alloc(u8, len);
-//         errdefer self.allocator.free(der);
-//
-//         try self.decoder.decode(der, ref);
-//
-//         return .{
-//             .allocator = self.allocator,
-//             .magic = magic,
-//             .ref = der,
-//             .comment = comment,
-//         };
-//     }
-// };
 
 pub const Cert = union(enum) {
     rsa: RSA,
@@ -198,7 +119,7 @@ pub const Magic = enum(u3) {
 
     const Self = @This();
 
-    const strings = enum_to_ssh_str(Magic, "-cert-v01@openssh.com");
+    const strings = common.enum_to_str(Magic, "-cert-v01@openssh.com");
 
     fn as_string(self: *const Self) []const u8 {
         return strings[@intFromEnum(self.*)];
@@ -234,7 +155,7 @@ pub const CriticalOptions = struct {
         /// their signature formats.
         verify_required,
 
-        pub const strings = enum_to_ssh_str(Self.Tags, "");
+        pub const strings = common.enum_to_str(Self.Tags, "");
 
         pub fn as_string(self: *const Self.Tags) []const u8 {
             return Self.Tag.strings[self.*];
@@ -252,10 +173,10 @@ pub const CriticalOptions = struct {
                 const opt = Self.is_valid_option(key) orelse
                     return null;
 
-                const next, const buf = parse_string(ref[off.*..]) catch
+                const next, const buf = Rrf4251.parse_string(ref[off.*..]) catch
                     return null;
 
-                _, const value = parse_string(buf) catch
+                _, const value = Rrf4251.parse_string(buf) catch
                     return null;
 
                 off.* += next;
@@ -314,7 +235,7 @@ pub const Extensions = struct {
         /// present.
         permit_user_rc = 0x01 << 5,
 
-        const strings = enum_to_ssh_str(Self.Tags, "");
+        const strings = common.enum_to_str(Self.Tags, "");
 
         pub inline fn as_string(self: *const Self.Tags) []const u8 {
             return Self.strings[@intFromEnum(self.*)];
@@ -415,32 +336,11 @@ pub const RSA = struct {
     }
 
     pub fn from_bytes(src: []const u8) Error!RSA {
-        _, const str = try parse_string(src);
+        _, const str = try Rrf4251.parse_string(src);
 
         return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
     }
 };
-
-// NOT USED
-// pub const DSA = struct {
-//     magic: Magic,
-//     nonce: []const u8,
-//     p: []const u8, // TODO: mpint
-//     q: []const u8, // TODO: mpint
-//     g: []const u8, // TODO: mpint
-//     y: []const u8, // TODO: mpint
-//     serial: u64,
-//     kind: CertType,
-//     key_id: []const u8,
-//     valid_principals: Principals,
-//     valid_after: []const u8,
-//     valid_before: []const u8,
-//     critical_options: CriticalOptions,
-//     extensions: Extensions,
-//     reserved: []const u8,
-//     signature_key: []const u8,
-//     signature: []const u8,
-// };
 
 pub const ECDSA = struct {
     magic: Magic,
@@ -476,7 +376,7 @@ pub const ECDSA = struct {
     }
 
     pub fn from_bytes(src: []const u8) Error!ECDSA {
-        _, const str = try parse_string(src);
+        _, const str = try Rrf4251.parse_string(src);
 
         return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
     }
@@ -515,37 +415,18 @@ pub const ED25519 = struct {
     }
 
     pub fn from_bytes(src: []const u8) Error!ED25519 {
-        _, const str = try parse_string(src);
+        _, const str = try Rrf4251.parse_string(src);
 
         return from(parse_magic(str) orelse return Error.InvalidFileFormat, src);
     }
 };
 
-inline fn read_int(comptime T: type, buf: []const u8) ?T {
-    if (buf.len < @sizeOf(T))
-        return null;
-
-    return std.mem.readInt(T, buf[0..@sizeOf(T)], std.builtin.Endian.big);
-}
-
-inline fn parse_int(comptime T: type, buf: []const u8) Error!struct { usize, T } {
-    if (read_int(T, buf)) |n|
-        return .{ @sizeOf(T), n };
-
-    return Error.MalformedInteger;
-}
-
-inline fn parse_string(buf: []const u8) Error!struct { usize, []const u8 } {
-    if (read_int(u32, buf)) |len| {
-        const size = len + @sizeOf(u32);
-
-        if (size > buf.len)
-            return Error.MalformedString;
-
-        return .{ size, buf[@sizeOf(u32)..size] };
-    }
-
-    return Error.MalformedString;
+// Parser continuation
+fn Cont(comptime T: type) type {
+    return struct {
+        usize,
+        T,
+    };
 }
 
 inline fn parse_magic(ref: []const u8) ?Magic {
@@ -557,34 +438,26 @@ inline fn parse_magic(ref: []const u8) ?Magic {
     return null;
 }
 
-// Parser continuation
-fn Cont(comptime T: type) type {
-    return struct {
-        usize,
-        T,
-    };
-}
-
 inline fn parse_cert_type(ref: []const u8) Error!Cont(CertType) {
-    const next, const val = try parse_int(u32, ref);
+    const next, const val = try Rrf4251.parse_int(u32, ref);
 
     return .{ next, @enumFromInt(val) };
 }
 
 inline fn parse_critical_options(buf: []const u8) Error!Cont(CriticalOptions) {
-    const next, const ref = try parse_string(buf);
+    const next, const ref = try Rrf4251.parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
 
 inline fn parse_principals(buf: []const u8) Error!Cont(Principals) {
-    const next, const ref = try parse_string(buf);
+    const next, const ref = try Rrf4251.parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
 
 inline fn parse_extensions(buf: []const u8) Error!Cont(Extensions) {
-    const next, const ref = try parse_string(buf);
+    const next, const ref = try Rrf4251.parse_string(buf);
 
     return .{ next, .{ .ref = ref } };
 }
@@ -600,11 +473,9 @@ inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
         const ref = buf[i..];
 
         const next, const val = switch (f.type) {
-            // RFC-4251 string
-            []const u8 => try parse_string(ref),
+            []const u8 => try Rrf4251.parse_string(ref),
 
-            // RFC-4251 uint64
-            u64 => try parse_int(u64, ref),
+            u64 => try Rrf4251.parse_int(u64, ref),
 
             // RFC-4251 uint32
             CertType => try parse_cert_type(ref),
