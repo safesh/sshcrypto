@@ -1,14 +1,14 @@
 const std = @import("std");
-const sshk = @import("sshkeys");
 
-const sshcert = sshk.cert;
+const sshcrypto = @import("sshcrypto");
+const sshcert = sshcrypto.cert;
 
 const Timer = std.time.Timer;
 
 const MAX_RUNS: usize = 4096;
 
 test "benchmark rsa `from_bytes`" {
-    var pem = try sshk.Decoder(sshcert.Pem).init(
+    var pem = try sshcrypto.Decoder(sshcert.Pem).init(
         std.testing.allocator,
         std.base64.standard.Decoder,
     ).decode(@embedFile("rsa-cert.pub"));

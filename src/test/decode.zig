@@ -1,7 +1,9 @@
-const sshk = @import("sshkeys");
 const std = @import("std");
 
-const sshkey = sshk.key;
+const sshcrypt = @import("sshcrypto");
+const sshkey = sshcrypt.key;
+
+const Decoder = sshcrypt.Decoder(sshkey.Pem);
 
 test "decode in place" {
     const rodata = @embedFile("rsa-key.pub");
@@ -11,16 +13,14 @@ test "decode in place" {
 
     std.mem.copyForwards(u8, key, rodata);
 
-    const decoder = sshk.Decoder(sshkey.Pem);
-
-    _ = try decoder.decode_in_place(
+    _ = try Decoder.decode_in_place(
         std.base64.standard.Decoder,
         key,
     );
 }
 
 test "decode with allocator" {
-    const decoder = sshk.Decoder(sshk.key.Pem).init(
+    const decoder = Decoder.init(
         std.testing.allocator,
         std.base64.standard.Decoder,
     );

@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const sshk = @import("sshkeys");
+const sshcrypto = @import("sshcrypto");
 
-const sshcert = sshk.cert;
+const sshcert = sshcrypto.cert;
 
 const testing = std.testing;
 const base64 = std.base64;
@@ -10,7 +10,7 @@ const base64 = std.base64;
 const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
 
-const Decoder = sshk.Decoder(sshcert.Pem);
+const Decoder = sshcrypto.Decoder(sshcert.Pem);
 
 test "parse rsa cert" {
     var pem = try Decoder.init(

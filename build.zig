@@ -80,11 +80,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod = b.addModule("sshkeys", .{
+    const mod = b.addModule("sshcrypto", .{
         .root_source_file = .{
             .src_path = .{
                 .owner = b,
-                .sub_path = b.pathFromRoot("src/sshkeys.zig"),
+                .sub_path = b.pathFromRoot("src/sshcrypto.zig"),
             },
         },
         .target = target,
@@ -107,7 +107,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .mod = mod,
-            .mod_name = "sshkeys",
+            .mod_name = "sshcrypto",
             .assets = &certs,
         }) catch @panic("OOM");
 
@@ -116,7 +116,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .mod = mod,
-            .mod_name = "sshkeys",
+            .mod_name = "sshcrypto",
             .assets = &keys,
         }) catch @panic("OOM");
 
@@ -125,7 +125,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .mod = mod,
-            .mod_name = "sshkeys",
+            .mod_name = "sshcrypto",
             .assets = &keys,
         }) catch @panic("OOM");
     }
@@ -133,8 +133,8 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Build documentation");
     {
         const docs_obj = b.addObject(.{
-            .name = "sshkeys",
-            .root_source_file = b.path("src/sshkeys.zig"),
+            .name = "sshcrypto",
+            .root_source_file = b.path("src/sshcrypto.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -157,7 +157,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
 
-        perf_test.root_module.addImport("sshkeys", mod);
+        perf_test.root_module.addImport("sshcrypto", mod);
 
         for (certs.items) |cert| {
             const name, const file = cert;
