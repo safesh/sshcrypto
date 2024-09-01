@@ -24,4 +24,4 @@ while getopts ":t:c:" opt; do
     esac
 done
 
-ssh-keygen -t "$T" -C "$C" -f "$FILE_NAME"
+ssh-keygen -t "$T" -C "$C" -f "$T-$FILE_NAME"

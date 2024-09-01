@@ -29,6 +29,14 @@ pub fn enum_to_str(comptime T: type, sufix: []const u8) [std.meta.fields(T).len]
     return ret;
 }
 
+// Parser continuation
+pub fn Cont(comptime T: type) type {
+    return struct {
+        usize,
+        T,
+    };
+}
+
 pub const Rfc4251 = struct {
     pub inline fn read_int(comptime T: type, buf: []const u8) ?T {
         if (buf.len < @sizeOf(T))

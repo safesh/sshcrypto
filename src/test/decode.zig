@@ -1,9 +1,9 @@
 const std = @import("std");
 
 const sshcrypt = @import("sshcrypto");
-const sshkey = sshcrypt.key;
+const pubk = sshcrypt.key.Public;
 
-const Decoder = sshcrypt.Decoder(sshkey.Pem);
+const Decoder = sshcrypt.Decoder(pubk.Pem);
 
 test "decode in place" {
     const rodata = @embedFile("rsa-key.pub");

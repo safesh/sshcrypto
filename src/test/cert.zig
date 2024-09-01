@@ -4,44 +4,40 @@ const sshcrypto = @import("sshcrypto");
 
 const sshcert = sshcrypto.cert;
 
-const testing = std.testing;
-const base64 = std.base64;
-
-const expectEqual = std.testing.expectEqual;
 const expect = std.testing.expect;
+const expect_equal = std.testing.expectEqual;
+const expect_error = std.testing.expectError;
 
 const Decoder = sshcrypto.Decoder(sshcert.Pem);
 
 test "parse rsa cert" {
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("rsa-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     switch (try sshcert.Cert.from_pem(&pem.data)) {
         .rsa => |cert| {
-            try expectEqual(cert.magic, sshcert.Magic.ssh_rsa);
-            try expectEqual(cert.serial, 2);
-            try expectEqual(cert.kind, sshcert.CertType.user);
+            try expect_equal(cert.magic, sshcert.Magic.ssh_rsa);
+            try expect_equal(cert.serial, 2);
+            try expect_equal(cert.kind, sshcert.CertType.user);
             try expect(std.mem.eql(u8, cert.key_id, "abc"));
 
             var it = cert.valid_principals.iter();
             try expect(std.mem.eql(u8, it.next().?, "root"));
             try expect(it.done());
 
-            try expectEqual(cert.valid_after, 0);
-            try expectEqual(cert.valid_before, std.math.maxInt(u64));
+            try expect_equal(cert.valid_after, 0);
+            try expect_equal(cert.valid_before, std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
     }
 }
 
 test "parse rsa cert bad cert" {
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("rsa-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     const len = pem.data.der.len;
@@ -51,46 +47,44 @@ test "parse rsa cert bad cert" {
 
     pem.data.der.len = len;
 
-    try testing.expectError(sshcert.Error.MalformedString, cert);
+    try expect_error(sshcert.Error.MalformedString, cert);
 }
 
 test "parse ecdsa cert" {
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("ecdsa-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("ecdsa-cert.pub"));
     defer pem.deinit();
 
     switch (try sshcert.Cert.from_pem(&pem.data)) {
         .ecdsa => |cert| {
-            try expectEqual(cert.magic, sshcert.Magic.ecdsa_sha2_nistp256);
-            try expectEqual(cert.serial, 2);
-            try expectEqual(cert.kind, sshcert.CertType.user);
+            try expect_equal(cert.magic, sshcert.Magic.ecdsa_sha2_nistp256);
+            try expect_equal(cert.serial, 2);
+            try expect_equal(cert.kind, sshcert.CertType.user);
             try expect(std.mem.eql(u8, cert.key_id, "abc"));
 
             var it = cert.valid_principals.iter();
             try expect(std.mem.eql(u8, it.next().?, "root"));
             try expect(it.done());
 
-            try expectEqual(cert.valid_after, 0);
-            try expectEqual(cert.valid_before, std.math.maxInt(u64));
+            try expect_equal(cert.valid_after, 0);
+            try expect_equal(cert.valid_before, std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
     }
 }
 
 test "parse ed25519 cert" {
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("ed25519-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("ed25519-cert.pub"));
     defer pem.deinit();
 
     switch (try sshcert.Cert.from_pem(&pem.data)) {
         .ed25519 => |cert| {
-            try expectEqual(cert.magic, sshcert.Magic.ssh_ed25519);
-            try expectEqual(cert.serial, 2);
-            try expectEqual(cert.kind, sshcert.CertType.user);
+            try expect_equal(cert.magic, sshcert.Magic.ssh_ed25519);
+            try expect_equal(cert.serial, 2);
+            try expect_equal(cert.kind, sshcert.CertType.user);
 
             try expect(std.mem.eql(u8, cert.key_id, "abc"));
 
@@ -98,8 +92,8 @@ test "parse ed25519 cert" {
             try expect(std.mem.eql(u8, it.next().?, "root"));
             try expect(it.done());
 
-            try expectEqual(cert.valid_after, 0);
-            try expectEqual(cert.valid_before, std.math.maxInt(u64));
+            try expect_equal(cert.valid_after, 0);
+            try expect_equal(cert.valid_before, std.math.maxInt(u64));
         },
         else => return error.wrong_certificate,
     }
@@ -115,10 +109,9 @@ test "extensions iterator" {
         "permit-user-rc",
     };
 
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("rsa-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcert.RSA.from_pem(&pem.data);
@@ -135,15 +128,14 @@ test "extensions iterator" {
 test "extensions to bitflags" {
     const Ext = sshcert.Extensions.Tags;
 
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("rsa-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcert.RSA.from_pem(&pem.data);
 
-    try expectEqual(
+    try expect_equal(
         try rsa.extensions.to_bitflags(),
         @intFromEnum(Ext.permit_agent_forwarding) |
             @intFromEnum(Ext.permit_X11_forwarding) |
@@ -161,19 +153,17 @@ test "multiple valid principals iterator" {
         "baz",
     };
 
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("multiple-principals-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("multiple-principals-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcert.RSA.from_pem(&pem.data);
 
     var it = rsa.valid_principals.iter();
 
-    for (valid_principals) |principal| {
+    for (valid_principals) |principal|
         try expect(std.mem.eql(u8, principal, it.next().?));
-    }
 }
 
 test "critical options iterator" {
@@ -183,10 +173,9 @@ test "critical options iterator" {
         .value = "ls -la",
     }};
 
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("force-command-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("force-command-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcert.RSA.from_pem(&pem.data);
@@ -196,7 +185,7 @@ test "critical options iterator" {
     for (critical_options) |critical_option| {
         const opt = it.next().?;
 
-        try expectEqual(critical_option.kind, opt.kind);
+        try expect_equal(critical_option.kind, opt.kind);
         try expect(std.mem.eql(u8, critical_option.value, opt.value));
     }
 
@@ -216,10 +205,9 @@ test "multiple critical options iterator" {
         },
     };
 
-    var pem = try Decoder.init(
-        testing.allocator,
-        base64.standard.Decoder,
-    ).decode(@embedFile("multiple-critical-options-cert.pub"));
+    var pem = try Decoder
+        .init(std.testing.allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("multiple-critical-options-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcert.RSA.from_pem(&pem.data);
@@ -229,7 +217,7 @@ test "multiple critical options iterator" {
     for (critical_options) |critical_option| {
         const opt = it.next().?;
 
-        try expectEqual(critical_option.kind, opt.kind);
+        try expect_equal(critical_option.kind, opt.kind);
         try expect(std.mem.eql(u8, critical_option.value, opt.value));
     }
 
