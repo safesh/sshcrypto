@@ -5,6 +5,10 @@ pub const Error = error{
     MalformedInteger,
     /// Invalid RFC-4251 string
     MalformedString,
+    /// Malformed RFC-4251 MpInt
+    MalformedMpInt, // TODO:
+    /// Object specific invalid data
+    InvalidData,
 };
 
 pub fn enum_to_str(comptime T: type, sufix: []const u8) [std.meta.fields(T).len][]const u8 {
@@ -37,7 +41,7 @@ pub fn Cont(comptime T: type) type {
     };
 }
 
-pub const Rfc4251 = struct {
+pub const rfc4251 = struct {
     pub inline fn read_int(comptime T: type, buf: []const u8) ?T {
         if (buf.len < @sizeOf(T))
             return null;
@@ -65,3 +69,32 @@ pub const Rfc4251 = struct {
         return Error.MalformedString;
     }
 };
+
+pub inline fn parse(comptime T: type, src: []const u8) Error!T {
+    var ret: T = undefined;
+
+    var i: usize = 0;
+
+    // TODO: Skip magic, since we need to verify it anyways
+
+    inline for (comptime std.meta.fields(T)) |f| {
+        const ref = src[i..];
+
+        const next, const val = switch (comptime f.type) {
+            []const u8 => try rfc4251.parse_string(ref),
+
+            u64 => try rfc4251.parse_int(u64, ref),
+
+            // TODO: Assert that the type has the parse method
+            else => try f.type.parse(ref),
+        };
+
+        i += next;
+
+        @field(ret, f.name) = val;
+    }
+
+    std.debug.assert(i == src.len);
+
+    return ret;
+}

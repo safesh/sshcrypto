@@ -30,7 +30,7 @@ fn GenericIteratorImpl(comptime T: type, parse_value: anytype) type {
         pub fn next(self: *Self) T {
             if (self.done()) return null;
 
-            const off, const ret = proto.Rfc4251.parse_string(self.ref[self.off..]) catch
+            const off, const ret = proto.rfc4251.parse_string(self.ref[self.off..]) catch
                 return null;
 
             self.off += off;
@@ -63,40 +63,6 @@ pub const Pem = struct {
     comment: []const u8,
 };
 
-pub const Cert = union(enum) {
-    rsa: RSA,
-    ecdsa: ECDSA,
-    ed25519: ED25519,
-
-    const Self = @This();
-
-    // TODO: from bytes...
-
-    pub fn from_pem(pem: *const Pem) Error!Self {
-        const magic = try Magic.from_bytes(pem.magic);
-
-        return switch (magic) {
-            .ssh_rsa,
-            .rsa_sha2_256,
-            .rsa_sha2_512,
-            => .{ .rsa = try RSA.from_pem(pem) },
-
-            // .ssh_dsa,
-            // => .{ .dsa = try DSA.from(der, m) },
-
-            .ecdsa_sha2_nistp256,
-            .ecdsa_sha2_nistp384,
-            .ecdsa_sha2_nistp521,
-            => .{ .ecdsa = try ECDSA.from_pem(pem) },
-
-            .ssh_ed25519,
-            => .{ .ed25519 = try ED25519.from_pem(pem) },
-
-            else => std.debug.panic("DSA certificates are not supported for now", .{}),
-        };
-    }
-};
-
 pub const Magic = enum(u3) {
     ssh_rsa,
     ssh_dsa,
@@ -115,18 +81,40 @@ pub const Magic = enum(u3) {
         return strings[@intFromEnum(self.*)];
     }
 
-    pub fn from_bytes(src: []const u8) Error!Magic {
-        for (Self.strings, 0..) |magic, i|
-            if (std.mem.eql(u8, magic, src))
+    pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Magic) {
+        const next, const magic = try proto.rfc4251.parse_string(src);
+
+        for (Self.strings, 0..) |s, i|
+            if (std.mem.eql(u8, s, magic))
+                return .{ next, @enumFromInt(i) };
+
+        return proto.Error.InvalidData;
+    }
+
+    pub fn from_slice(src: []const u8) Error!Magic {
+        for (Self.strings, 0..) |s, i|
+            if (std.mem.eql(u8, s, src))
                 return @enumFromInt(i);
 
         return Error.InvalidMagicString;
+    }
+
+    pub fn from_bytes(src: []const u8) Error!Magic {
+        _, const magic = Self.parse(src) catch return Error.InvalidMagicString;
+
+        return magic;
     }
 };
 
 pub const CertType = enum(u2) {
     user = 1,
     host = 2,
+
+    pub inline fn parse(src: []const u8) proto.Error!proto.Cont(CertType) {
+        const next, const val = try proto.rfc4251.parse_int(u32, src);
+
+        return .{ next, @enumFromInt(val) };
+    }
 };
 
 /// The critical options section of the certificate specifies zero or more
@@ -160,6 +148,12 @@ pub const CriticalOptions = struct {
         }
     };
 
+    pub inline fn parse(buf: []const u8) proto.Error!proto.Cont(CriticalOptions) {
+        const next, const ref = try proto.rfc4251.parse_string(buf);
+
+        return .{ next, .{ .ref = ref } };
+    }
+
     pub fn iter(self: *const Self) Self.Iterator {
         return .{ .ref = self.ref, .off = 0 };
     }
@@ -171,10 +165,10 @@ pub const CriticalOptions = struct {
                 const opt = Self.is_valid_option(key) orelse
                     return null;
 
-                const next, const buf = proto.Rfc4251.parse_string(ref[off.*..]) catch
+                const next, const buf = proto.rfc4251.parse_string(ref[off.*..]) catch
                     return null;
 
-                _, const value = proto.Rfc4251.parse_string(buf) catch
+                _, const value = proto.rfc4251.parse_string(buf) catch
                     return null;
 
                 off.* += next;
@@ -240,6 +234,12 @@ pub const Extensions = struct {
         }
     };
 
+    pub inline fn parse(buf: []const u8) proto.Error!proto.Cont(Extensions) {
+        const next, const ref = try proto.rfc4251.parse_string(buf);
+
+        return .{ next, .{ .ref = ref } };
+    }
+
     pub fn iter(self: *const Self) Self.Iterator {
         return .{ .ref = self.ref, .off = 0 };
     }
@@ -287,6 +287,12 @@ const Principals = struct {
 
     const Self = @This();
 
+    pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Principals) {
+        const next, const ref = try proto.rfc4251.parse_string(src);
+
+        return .{ next, .{ .ref = ref } };
+    }
+
     pub fn iter(self: *const Self) Self.Iterator {
         return .{ .ref = self.ref, .off = 0 };
     }
@@ -319,21 +325,16 @@ pub const RSA = struct {
 
     const Self = @This();
 
-    inline fn from(magic: Magic, src: []const u8) Error!RSA {
-        switch (magic) {
-            .ssh_rsa, .rsa_sha2_256, .rsa_sha2_512 => return try parse(Self, magic, src),
-            else => return Error.InvalidMagicString,
-        }
+    fn from(src: []const u8) Error!RSA {
+        return try proto.parse(Self, src);
     }
 
-    pub fn from_pem(pem: *const Pem) Error!RSA {
-        return Self.from(try Magic.from_bytes(pem.magic), pem.der);
+    pub inline fn from_pem(pem: *const Pem) Error!RSA {
+        return try Self.from(pem.der);
     }
 
-    pub fn from_bytes(src: []const u8) Error!RSA {
-        _, const str = try proto.Rfc4251.parse_string(src);
-
-        return Self.from(try Magic.from_bytes(str), src);
+    pub inline fn from_bytes(src: []const u8) Error!RSA {
+        return try Self.from(src);
     }
 };
 
@@ -356,21 +357,16 @@ pub const ECDSA = struct {
 
     const Self = @This();
 
-    inline fn from(magic: Magic, src: []const u8) Error!ECDSA {
-        switch (magic) {
-            .ecdsa_sha2_nistp256, .ecdsa_sha2_nistp384, .ecdsa_sha2_nistp521 => return try parse(Self, magic, src),
-            else => return Error.InvalidMagicString,
-        }
+    fn from(src: []const u8) Error!ECDSA {
+        return try proto.parse(Self, src);
     }
 
-    pub fn from_pem(pem: *const Pem) Error!ECDSA {
-        return Self.from(try Magic.from_bytes(pem.magic), pem.der);
+    pub inline fn from_pem(pem: *const Pem) Error!ECDSA {
+        return try Self.from(pem.der);
     }
 
-    pub fn from_bytes(src: []const u8) Error!ECDSA {
-        _, const str = try proto.Rfc4251.parse_string(src);
-
-        return Self.from(try Magic.from_bytes(str), src);
+    pub inline fn from_bytes(src: []const u8) Error!ECDSA {
+        return try Self.from(src);
     }
 };
 
@@ -392,91 +388,46 @@ pub const ED25519 = struct {
 
     const Self = @This();
 
-    inline fn from(magic: Magic, src: []const u8) Error!ED25519 {
-        switch (magic) {
-            .ssh_ed25519 => return try parse(Self, magic, src),
-            else => return Error.InvalidMagicString,
-        }
+    fn from(src: []const u8) Error!ED25519 {
+        return try proto.parse(Self, src);
     }
 
-    pub fn from_pem(pem: *const Pem) Error!ED25519 {
-        return Self.from(try Magic.from_bytes(pem.magic), pem.der);
+    pub inline fn from_pem(pem: *const Pem) Error!ED25519 {
+        return try Self.from(pem.der);
     }
 
-    pub fn from_bytes(src: []const u8) Error!ED25519 {
-        _, const magic = try proto.Rfc4251.parse_string(src);
-
-        return Self.from(try Magic.from_bytes(magic), src);
+    pub inline fn from_bytes(src: []const u8) Error!ED25519 {
+        return try Self.from(src);
     }
 };
 
-// Parser continuation
-fn Cont(comptime T: type) type {
-    return struct {
-        usize,
-        T,
-    };
-}
+pub const Cert = union(enum) {
+    rsa: RSA,
+    ecdsa: ECDSA,
+    ed25519: ED25519,
 
-inline fn parse_cert_type(ref: []const u8) Error!Cont(CertType) {
-    const next, const val = try proto.Rfc4251.parse_int(u32, ref);
+    const Self = @This();
 
-    return .{ next, @enumFromInt(val) };
-}
+    // TODO: from bytes...
 
-inline fn parse_critical_options(buf: []const u8) Error!Cont(CriticalOptions) {
-    const next, const ref = try proto.Rfc4251.parse_string(buf);
+    pub fn from_pem(pem: *const Pem) Error!Self {
+        const magic = try Magic.from_slice(pem.magic);
 
-    return .{ next, .{ .ref = ref } };
-}
+        return switch (magic) {
+            .ssh_rsa,
+            .rsa_sha2_256,
+            .rsa_sha2_512,
+            => .{ .rsa = try RSA.from_pem(pem) },
 
-inline fn parse_principals(buf: []const u8) Error!Cont(Principals) {
-    const next, const ref = try proto.Rfc4251.parse_string(buf);
+            .ecdsa_sha2_nistp256,
+            .ecdsa_sha2_nistp384,
+            .ecdsa_sha2_nistp521,
+            => .{ .ecdsa = try ECDSA.from_pem(pem) },
 
-    return .{ next, .{ .ref = ref } };
-}
+            .ssh_ed25519,
+            => .{ .ed25519 = try ED25519.from_pem(pem) },
 
-inline fn parse_extensions(buf: []const u8) Error!Cont(Extensions) {
-    const next, const ref = try proto.Rfc4251.parse_string(buf);
-
-    return .{ next, .{ .ref = ref } };
-}
-
-inline fn parse(comptime T: type, magic: Magic, buf: []const u8) Error!T {
-    var ret: T = undefined;
-
-    ret.magic = magic;
-
-    var i: usize = Magic.strings[@intFromEnum(magic)].len + @sizeOf(u32);
-
-    inline for (comptime meta.fields(T)) |f| {
-        const ref = buf[i..];
-
-        const next, const val = switch (f.type) {
-            []const u8 => try proto.Rfc4251.parse_string(ref),
-
-            u64 => try proto.Rfc4251.parse_int(u64, ref),
-
-            // RFC-4251 uint32
-            CertType => try parse_cert_type(ref),
-
-            // RFC-4251 string
-            CriticalOptions => try parse_critical_options(ref),
-
-            // RFC-4251 string
-            Principals => try parse_principals(ref),
-
-            // RFC-4251 string
-            Extensions => try parse_extensions(ref),
-
-            // Don't unroll anything else
-            else => continue,
+            else => @panic("DSA certificates are not supported"),
         };
-
-        i += next;
-
-        @field(ret, f.name) = val;
     }
-
-    return ret;
-}
+};

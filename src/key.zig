@@ -23,18 +23,18 @@ pub const Magic = enum(u3) {
         return strings[@intFromEnum(self.*)];
     }
 
-    fn parse(src: []const u8) Error!proto.Cont(Magic) {
-        const next, const magic = try proto.Rfc4251.parse_string(src);
+    pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Magic) {
+        const next, const magic = try proto.rfc4251.parse_string(src);
 
         for (Self.strings, 0..) |s, i|
             if (std.mem.eql(u8, s, magic))
                 return .{ next, @enumFromInt(i) };
 
-        return Error.InvalidMagicString;
+        return proto.Error.InvalidData;
     }
 
     pub fn from_bytes(src: []const u8) Error!Magic {
-        _, const magic = try Self.parse(src);
+        _, const magic = Self.parse(src) catch return Error.InvalidMagicString;
 
         return magic;
     }
@@ -55,7 +55,7 @@ pub const Public = struct {
         const Self = @This();
 
         fn from(src: []const u8) Error!RSA {
-            return try parse(Self, src);
+            return try proto.parse(Self, src);
         }
 
         pub inline fn from_bytes(src: []const u8) Error!RSA {
@@ -76,7 +76,7 @@ pub const Public = struct {
         const Self = @This();
 
         fn from(src: []const u8) Error!ECDSA {
-            return try parse(Self, src);
+            return try proto.parse(Self, src);
         }
 
         pub inline fn from_bytes(src: []const u8) Error!ECDSA {
@@ -96,7 +96,7 @@ pub const Public = struct {
         const Self = @This();
 
         fn from(src: []const u8) Error!ED25519 {
-            return try parse(Self, src);
+            return try proto.parse(Self, src);
         }
 
         pub inline fn from_bytes(src: []const u8) Error!ED25519 {
@@ -110,29 +110,4 @@ pub const Public = struct {
     };
 };
 
-inline fn parse(comptime T: type, src: []const u8) Error!T {
-    var ret: T = undefined;
-
-    var i: usize = 0;
-
-    inline for (comptime std.meta.fields(T)) |f| {
-        const ref = src[i..];
-
-        const next, const val = switch (f.type) {
-            []const u8 => try proto.Rfc4251.parse_string(ref),
-
-            u64 => try proto.Rfc4251.parse_int(u64, ref),
-
-            // TODO: Assert that the type has the parse method
-            else => try f.type.parse(ref),
-        };
-
-        i += next;
-
-        @field(ret, f.name) = val;
-    }
-
-    std.debug.assert(i == src.len);
-
-    return ret;
-}
+const Private = struct {};
