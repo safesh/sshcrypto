@@ -151,17 +151,18 @@ pub fn build(b: *std.Build) void {
 
     const perf_step = b.step("perf", "Perf record");
     {
-        const perf_test = b.addTest(.{
+        const perf_exe = b.addExecutable(.{
+            .name = "cert_perf",
             .root_source_file = b.path("src/perf/cert.zig"),
             .target = target,
             .optimize = optimize,
         });
 
-        perf_test.root_module.addImport("sshcrypto", mod);
+        perf_exe.root_module.addImport("sshcrypto", mod);
 
         for (certs.items) |cert| {
             const name, const file = cert;
-            perf_test.root_module.addAnonymousImport(
+            perf_exe.root_module.addAnonymousImport(
                 name,
                 .{ .root_source_file = b.path(file) },
             );
@@ -170,7 +171,7 @@ pub fn build(b: *std.Build) void {
         const run_perf = b.addSystemCommand(&.{ "perf", "record", "-e", PERF_EVENTS });
 
         run_perf.has_side_effects = true;
-        run_perf.addArtifactArg(perf_test);
+        run_perf.addArtifactArg(perf_exe);
 
         perf_step.dependOn(&run_perf.step);
     }
