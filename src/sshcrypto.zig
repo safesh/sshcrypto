@@ -61,6 +61,7 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
                 .data = try Self.parse_fields(src),
             };
 
+            // TODO: Decode in place with Base64DecoderWithIgnore.
             const len = try decoder.calcSizeForSlice(ret.data.der);
 
             try decoder.decode(ret.data.der[0..len], ret.data.der);
@@ -102,20 +103,45 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
             return ret;
         }
 
+        inline fn decode_with_true_size(self: *const Self, data: *const T) ![]u8 {
+            const len = try self.decoder.calcSizeForSlice(data.der);
+
+            const der = try self.allocator.alloc(u8, len);
+            errdefer self.allocator.free(der);
+
+            try self.decoder.decode(der, data.der);
+
+            return der;
+        }
+
+        inline fn decode_with_total_size(self: *const Self, data: *const T) ![]u8 {
+            const len = try self.decoder.calcSizeUpperBound(data.der.len);
+
+            const der = try self.allocator.alloc(u8, len);
+            defer self.allocator.free(der);
+
+            const acc_len = try self.decoder.decode(der, data.der);
+
+            const aux = try self.allocator.alloc(u8, acc_len);
+            errdefer self.allocator.free(aux);
+
+            std.mem.copyForwards(u8, aux, der[0..acc_len]);
+
+            return aux;
+        }
+
         pub fn decode(self: *const Self, src: []const u8) !Managed(T) {
             var ret: Self.Managed(T) = .{
                 .allocator = self.allocator,
                 .data = try Self.parse_fields(src),
             };
 
-            const len = try self.decoder.calcSizeUpperBound(ret.data.der.len);
-
-            const der = try self.allocator.alloc(u8, len);
-            errdefer self.allocator.free(der);
-
-            _ = try self.decoder.decode(der, ret.data.der);
-
-            ret.data.der = der;
+            // Since Zig's `Base64DecoderWithIgnore` does not support `calcSizeForSlice`
+            // we need to alloc twice in order to get the actual decoded size.
+            ret.data.der = if (@hasDecl(D, "calcSizeForSlice"))
+                try self.decode_with_true_size(&ret.data)
+            else
+                try self.decode_with_total_size(&ret.data);
 
             return ret;
         }

@@ -98,8 +98,10 @@ pub inline fn parse(comptime T: type, src: []const u8) Error!T {
 
             u64 => try rfc4251.parse_int(u64, ref),
 
-            // TODO: Assert that the type has the parse method
-            else => try f.type.parse(ref),
+            else => if (@hasDecl(f.type, "parse"))
+                try f.type.parse(ref)
+            else
+                @compileError("Type does not declare `fn parse([]const u8) Count!type` "),
         };
 
         i += next;
@@ -107,7 +109,7 @@ pub inline fn parse(comptime T: type, src: []const u8) Error!T {
         @field(ret, f.name) = val;
     }
 
-    // std.debug.assert(i == src.len);
+    std.debug.assert(i == src.len);
 
     return ret;
 }
