@@ -21,13 +21,16 @@ pub const Error = error{
 ///
 /// TODO: Memory is owned by Der, with refrences to the original data which
 /// **SHOULD** outlive Der.
-pub fn Decoder(comptime T: type) type {
+pub fn GenericDecoder(comptime T: type, comptime D: type) type {
     if (@typeInfo(T) != .Struct)
         @compileError("Expected struct");
 
+    if (!@hasDecl(T, "tokenize"))
+        @compileError("Must define tokenize");
+
     return struct {
         allocator: Allocator,
-        decoder: Base64Decoder,
+        decoder: D,
 
         const Self = @This();
 
@@ -54,20 +57,20 @@ pub fn Decoder(comptime T: type) type {
         /// memory, changing the reference data. Referenced data must outlive
         /// this.
         pub fn decode_in_place(decoder: Base64Decoder, src: []u8) !Unmanaged(T) {
-            var pem: Self.Unmanaged(T) = .{
+            var ret: Self.Unmanaged(T) = .{
                 .data = try Self.parse_fields(src),
             };
 
-            const len = try decoder.calcSizeForSlice(pem.data.der);
+            const len = try decoder.calcSizeForSlice(ret.data.der);
 
-            try decoder.decode(pem.data.der[0..len], pem.data.der);
+            try decoder.decode(ret.data.der[0..len], ret.data.der);
 
-            pem.data.der.len = len;
+            ret.data.der.len = len;
 
-            return pem;
+            return ret;
         }
 
-        pub fn init(allocator: Allocator, decoder: Base64Decoder) Self {
+        pub fn init(allocator: Allocator, decoder: D) Self {
             return .{
                 .allocator = allocator,
                 .decoder = decoder,
@@ -75,7 +78,7 @@ pub fn Decoder(comptime T: type) type {
         }
 
         fn parse_fields(src: []const u8) !T {
-            var it = std.mem.tokenizeAny(u8, src, " ");
+            var it = T.tokenize(src);
 
             var ret: T = undefined;
 
@@ -83,10 +86,16 @@ pub fn Decoder(comptime T: type) type {
                 const val = it.next() orelse
                     return error.InvalidFileFormat;
 
+                if (@typeInfo(field.type) == .Struct and @hasDecl(field.type, "parse")) {
+                    try field.type.parse(val);
+
+                    continue;
+                }
+
                 @field(ret, field.name) = switch (field.type) {
                     []u8 => @constCast(val),
                     []const u8 => val,
-                    else => @panic("Unkown type"),
+                    else => @panic("Wrong type"),
                 };
             }
 
@@ -94,21 +103,37 @@ pub fn Decoder(comptime T: type) type {
         }
 
         pub fn decode(self: *const Self, src: []const u8) !Managed(T) {
-            var pem: Self.Managed(T) = .{
+            var ret: Self.Managed(T) = .{
                 .allocator = self.allocator,
                 .data = try Self.parse_fields(src),
             };
 
-            const len = try self.decoder.calcSizeForSlice(pem.data.der);
+            const len = try self.decoder.calcSizeUpperBound(ret.data.der.len);
 
             const der = try self.allocator.alloc(u8, len);
             errdefer self.allocator.free(der);
 
-            try self.decoder.decode(der, pem.data.der);
+            _ = try self.decoder.decode(der, ret.data.der);
 
-            pem.data.der = der;
+            ret.data.der = der;
 
-            return pem;
+            return ret;
         }
     };
 }
+
+pub const pem = struct {
+    pub const PublicKeyDecoder = GenericDecoder(key.Public.Pem, std.base64.Base64Decoder);
+    pub const PrivateKeyDecoder = GenericDecoder(key.Private.Pem, std.base64.Base64DecoderWithIgnore);
+    pub const CertificateDecoder = GenericDecoder(cert.Pem, std.base64.Base64Decoder);
+};
+
+pub const base64 = struct {
+    pub const pem = struct {
+        pub const Decoder = std.base64.Base64DecoderWithIgnore.init(
+            std.base64.standard.alphabet_chars,
+            std.base64.standard.pad_char,
+            &.{ '\n', '\r' },
+        );
+    };
+};

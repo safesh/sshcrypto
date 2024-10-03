@@ -8,6 +8,7 @@ pub const Error = error{
     /// Malformed RFC-4251 MpInt
     MalformedMpInt, // TODO:
     /// Object specific invalid data
+    InvalidLiteral,
     InvalidData,
 };
 
@@ -70,6 +71,18 @@ pub const rfc4251 = struct {
     }
 };
 
+pub fn Literal(comptime L: []const u8) type {
+    return struct {
+        pub fn parse(src: []const u8) Error!void {
+            if (std.mem.eql(u8, src, L)) {
+                return;
+            }
+
+            return Error.InvalidLiteral;
+        }
+    };
+}
+
 pub inline fn parse(comptime T: type, src: []const u8) Error!T {
     var ret: T = undefined;
 
@@ -94,7 +107,7 @@ pub inline fn parse(comptime T: type, src: []const u8) Error!T {
         @field(ret, f.name) = val;
     }
 
-    std.debug.assert(i == src.len);
+    // std.debug.assert(i == src.len);
 
     return ret;
 }

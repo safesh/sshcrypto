@@ -45,6 +45,10 @@ pub const Public = struct {
         magic: []const u8,
         der: []u8,
         comment: []const u8,
+
+        pub inline fn tokenize(src: []const u8) std.mem.TokenIterator(u8, .any) {
+            return std.mem.tokenizeAny(u8, src, " ");
+        }
     };
 
     pub const RSA = struct {
@@ -110,4 +114,16 @@ pub const Public = struct {
     };
 };
 
-const Private = struct {};
+pub const Private = struct {
+    pub const Pem = struct {
+        _prefix: proto.Literal("BEGIN OPENSSH PRIVATE KEY"),
+        der: []u8,
+        _posfix: proto.Literal("END OPENSSH PRIVATE KEY"),
+
+        pub inline fn tokenize(src: []const u8) std.mem.TokenIterator(u8, .sequence) {
+            return std.mem.tokenizeSequence(u8, src, "-----");
+        }
+    };
+
+    pub const RSA = struct {};
+};

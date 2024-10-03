@@ -16,10 +16,9 @@ pub fn main() !void {
         if (gpa.deinit() == .leak) @panic("LEAK");
     }
 
-    var pem = try sshcrypto.Decoder(sshcert.Pem).init(
-        allocator,
-        std.base64.standard.Decoder,
-    ).decode(@embedFile("rsa-cert.pub"));
+    var pem = try sshcrypto.pem.CertificateDecoder
+        .init(allocator, std.base64.standard.Decoder)
+        .decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     var timer = try Timer.start();

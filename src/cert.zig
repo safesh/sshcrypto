@@ -61,6 +61,10 @@ pub const Pem = struct {
     magic: []const u8,
     der: []u8,
     comment: []const u8,
+
+    pub inline fn tokenize(src: []const u8) std.mem.TokenIterator(u8, .any) {
+        return std.mem.tokenizeAny(u8, src, " ");
+    }
 };
 
 pub const Magic = enum(u3) {
