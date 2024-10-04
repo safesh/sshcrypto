@@ -73,7 +73,7 @@ pub const rfc4251 = struct {
 
 pub fn Literal(comptime L: []const u8) type {
     return struct {
-        pub fn parse(src: []const u8) Error!void {
+        pub inline fn parse(src: []const u8) Error!void {
             if (std.mem.eql(u8, src, L)) {
                 return;
             }

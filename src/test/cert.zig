@@ -6,12 +6,11 @@ const expect = std.testing.expect;
 const expect_equal = std.testing.expectEqual;
 const expect_error = std.testing.expectError;
 
-const Decoder = sshcrypto.Decoder(sshcrypto.cert.Pem);
+const cert_decoder = sshcrypto.pem.CertificateDecoder
+    .init(std.testing.allocator, std.base64.standard.Decoder);
 
 test "parse rsa cert" {
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("rsa-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     switch (try sshcrypto.cert.Cert.from_pem(&pem.data)) {
@@ -33,9 +32,7 @@ test "parse rsa cert" {
 }
 
 test "parse rsa cert bad cert" {
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("rsa-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     const len = pem.data.der.len;
@@ -49,9 +46,7 @@ test "parse rsa cert bad cert" {
 }
 
 test "parse ecdsa cert" {
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("ecdsa-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("ecdsa-cert.pub"));
     defer pem.deinit();
 
     switch (try sshcrypto.cert.Cert.from_pem(&pem.data)) {
@@ -73,9 +68,7 @@ test "parse ecdsa cert" {
 }
 
 test "parse ed25519 cert" {
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("ed25519-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("ed25519-cert.pub"));
     defer pem.deinit();
 
     switch (try sshcrypto.cert.Cert.from_pem(&pem.data)) {
@@ -107,9 +100,7 @@ test "extensions iterator" {
         "permit-user-rc",
     };
 
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("rsa-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
@@ -151,9 +142,7 @@ test "multiple valid principals iterator" {
         "baz",
     };
 
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("multiple-principals-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("multiple-principals-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
@@ -171,9 +160,7 @@ test "critical options iterator" {
         .value = "ls -la",
     }};
 
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("force-command-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("force-command-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
@@ -203,9 +190,7 @@ test "multiple critical options iterator" {
         },
     };
 
-    var pem = try sshcrypto.pem.CertificateDecoder
-        .init(std.testing.allocator, std.base64.standard.Decoder)
-        .decode(@embedFile("multiple-critical-options-cert.pub"));
+    var pem = try cert_decoder.decode(@embedFile("multiple-critical-options-cert.pub"));
     defer pem.deinit();
 
     const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
