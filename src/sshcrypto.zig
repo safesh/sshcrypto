@@ -1,19 +1,14 @@
 //! SSH Keys and Certificates parsing and manipulation utilities.
 
-pub const cert = @import("cert.zig");
-pub const key = @import("key.zig");
-
 const std = @import("std");
 
-const Allocator = std.mem.Allocator;
-
-const Base64Decoder = std.base64.Base64Decoder;
-const Base64Encoder = std.base64.Base64Encoder;
+pub const cert = @import("cert.zig");
+pub const key = @import("key.zig");
 
 // TODO: Map errors
 pub const Error = error{
     InvalidFileFormat,
-} || std.base64.Error || Allocator.Error;
+} || std.base64.Error || std.mem.Allocator.Error;
 
 // TODO: AutoDecoder
 
@@ -29,7 +24,7 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
         @compileError("Must define tokenize");
 
     return struct {
-        allocator: Allocator,
+        allocator: std.mem.Allocator,
         decoder: D,
 
         const Self = @This();
@@ -44,7 +39,7 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
         /// Managed data with owned memory.
         fn Managed(comptime U: type) type {
             return struct {
-                allocator: Allocator,
+                allocator: std.mem.Allocator,
                 data: U,
 
                 pub fn deinit(self: *const @This()) void {
@@ -56,7 +51,7 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
         /// Decode T from PEM to DER. This is done in-place, without allocating
         /// memory, changing the reference data. Referenced data must outlive
         /// this.
-        pub fn decode_in_place(decoder: Base64Decoder, src: []u8) !Unmanaged(T) {
+        pub fn decode_in_place(decoder: std.base64.Base64Decoder, src: []u8) !Unmanaged(T) {
             var ret: Self.Unmanaged(T) = .{
                 .data = try Self.parse_fields(src),
             };
@@ -71,7 +66,7 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
             return ret;
         }
 
-        pub fn init(allocator: Allocator, decoder: D) Self {
+        pub fn init(allocator: std.mem.Allocator, decoder: D) Self {
             return .{
                 .allocator = allocator,
                 .decoder = decoder,
@@ -149,8 +144,8 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
 }
 
 pub const pem = struct {
-    pub const PublicKeyDecoder = GenericDecoder(key.Public.Pem, std.base64.Base64Decoder);
-    pub const PrivateKeyDecoder = GenericDecoder(key.Private.Pem, std.base64.Base64DecoderWithIgnore);
+    pub const PublicKeyDecoder = GenericDecoder(key.public.Pem, std.base64.Base64Decoder);
+    pub const PrivateKeyDecoder = GenericDecoder(key.private.Pem, std.base64.Base64DecoderWithIgnore);
     pub const CertificateDecoder = GenericDecoder(cert.Pem, std.base64.Base64Decoder);
 };
 

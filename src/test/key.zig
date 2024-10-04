@@ -1,8 +1,6 @@
 const std = @import("std");
 
 const sshcrypto = @import("sshcrypto");
-const pubk = sshcrypto.key.Public;
-const privk = sshcrypto.key.Private;
 
 test "rsa public key" {
     const pem = try sshcrypto.pem.PublicKeyDecoder
@@ -10,7 +8,7 @@ test "rsa public key" {
         .decode(@embedFile("rsa-key.pub"));
     defer pem.deinit();
 
-    _ = try pubk.RSA.from_bytes(pem.data.der);
+    _ = try sshcrypto.key.public.RSA.from_bytes(pem.data.der);
 }
 
 test "ecdsa public key" {
@@ -19,7 +17,7 @@ test "ecdsa public key" {
         .decode(@embedFile("ecdsa-key.pub"));
     defer pem.deinit();
 
-    _ = try pubk.ECDSA.from_bytes(pem.data.der);
+    _ = try sshcrypto.key.public.ECDSA.from_bytes(pem.data.der);
 }
 
 test "ed25519 public key" {
@@ -28,10 +26,8 @@ test "ed25519 public key" {
         .decode(@embedFile("ed25519-key.pub"));
     defer pem.deinit();
 
-    _ = try pubk.ED25519.from_bytes(pem.data.der);
+    _ = try sshcrypto.key.public.ED25519.from_bytes(pem.data.der);
 }
-
-const PrivateKeyDecoder = sshcrypto.Decoder(privk.Pem);
 
 test "rsa private key" {
     const pem = try sshcrypto.pem.PrivateKeyDecoder.init(

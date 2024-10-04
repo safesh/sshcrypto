@@ -2,8 +2,6 @@ const std = @import("std");
 
 const proto = @import("proto.zig");
 
-const Allocator = std.mem.Allocator;
-
 pub const Error = error{
     InvalidMagicString,
 } || proto.Error;
@@ -40,7 +38,7 @@ pub const Magic = enum(u3) {
     }
 };
 
-pub const Public = struct {
+pub const public = struct {
     pub const Pem = struct {
         magic: []const u8,
         der: []u8,
@@ -114,7 +112,7 @@ pub const Public = struct {
     };
 };
 
-pub const Private = struct {
+pub const private = struct {
     pub const Pem = struct {
         _prefix: proto.Literal("BEGIN OPENSSH PRIVATE KEY"),
         der: []u8,

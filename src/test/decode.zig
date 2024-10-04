@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const sshcrypt = @import("sshcrypto");
-const pubk = sshcrypt.key.Public;
 
 test "decode in place" {
     const rodata = @embedFile("rsa-key.pub");

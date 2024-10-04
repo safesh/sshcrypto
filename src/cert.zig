@@ -7,12 +7,6 @@
 const std = @import("std");
 const proto = @import("proto.zig");
 
-const meta = std.meta;
-const base64 = std.base64;
-const testing = std.testing;
-
-const Timer = std.time.Timer;
-
 pub const Error = error{
     InvalidMagicString,
     /// As per spec, repeated extension are not allowed.
