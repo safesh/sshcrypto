@@ -81,6 +81,14 @@ pub fn read_null_terminated(src: []const u8) Error!Cont([:0]u8) {
     return .{ i + 1, @constCast(@ptrCast(src[0..i])) };
 }
 
+pub const Padding = struct {
+    _pad: []const u8,
+
+    pub inline fn parse(src: []const u8) Error!Cont(Padding) {
+        return .{ src.len, .{ ._pad = src } };
+    }
+};
+
 pub fn Literal(comptime L: []const u8) type {
     return struct {
         pub inline fn parse(src: []const u8) Error!void {

@@ -33,5 +33,14 @@ test "rsa private key" {
     const pem = try key_decoder.decode(@embedFile("rsa-key"));
     defer pem.deinit();
 
-    _ = try sshcrypto.key.private.RSA.from(pem.data.der);
+    const key = try sshcrypto.key.private.RSA.from(pem.data.der);
+
+    const public_key = sshcrypto.key.public.RSA
+        .from_bytes(key.public_key_blob);
+    const private_key = sshcrypto.key.private.RSA.Key
+        .from_bytes(
+        key.private_key_blob,
+    );
+
+    std.debug.print("{any}\n{any}\n", .{ public_key, private_key });
 }

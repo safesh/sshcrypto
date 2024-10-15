@@ -157,13 +157,46 @@ pub const private = struct {
         kdf_name: []const u8,
         kdf: u32,
         number_of_keys: u32,
-        public_key: []const u8,
-        private_key: []const u8, // TODO: parts
+        public_key_blob: []const u8,
+        private_key_blob: []const u8,
+
+        pub const Key = struct {
+            check: u64,
+            key_type: []const u8,
+            // Public key parts
+            n: []const u8,
+            e: []const u8,
+            // Private key parts
+            d: []const u8,
+            i: []const u8,
+            p: []const u8,
+            q: []const u8,
+            comment: []const u8,
+
+            _pad: proto.Padding,
+
+            fn from(src: []const u8) Error!Key {
+                return try proto.parse(Key, src);
+            }
+
+            pub inline fn from_bytes(src: []const u8) Error!Key {
+                return try Key.from(src);
+            }
+        };
 
         const Self = @This();
 
         pub fn from(src: []const u8) Error!RSA {
             return try proto.parse(Self, src);
+        }
+
+        pub inline fn from_bytes(src: []const u8) Error!RSA {
+            return try Self.from(src);
+        }
+
+        pub inline fn from_pem(pem: Pem) Error!RSA {
+            // XXX: Check if PEM magic matches what we got from the DER
+            return try Self.from(pem.der);
         }
     };
 };
