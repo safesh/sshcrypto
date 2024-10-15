@@ -32,4 +32,6 @@ const key_decoder = sshcrypto.pem.PrivateKeyDecoder
 test "rsa private key" {
     const pem = try key_decoder.decode(@embedFile("rsa-key"));
     defer pem.deinit();
+
+    _ = try sshcrypto.key.private.RSA.from(pem.data.der);
 }

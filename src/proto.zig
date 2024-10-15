@@ -71,6 +71,16 @@ pub const rfc4251 = struct {
     }
 };
 
+pub fn read_null_terminated(src: []const u8) Error!Cont([:0]u8) {
+    var i: u32 = 0;
+
+    while (i != src.len) : (i += 1) {
+        if (src[i] == 0x00) break;
+    }
+
+    return .{ i + 1, @constCast(@ptrCast(src[0..i])) };
+}
+
 pub fn Literal(comptime L: []const u8) type {
     return struct {
         pub inline fn parse(src: []const u8) Error!void {
@@ -98,9 +108,12 @@ pub inline fn parse(comptime T: type, src: []const u8) Error!T {
 
             u64 => try rfc4251.parse_int(u64, ref),
 
+            u32 => try rfc4251.parse_int(u32, ref),
+
             else => if (@hasDecl(f.type, "parse"))
                 try f.type.parse(ref)
             else
+                // TODO: Improve this message
                 @compileError("Type does not declare `fn parse([]const u8) Count!type` "),
         };
 

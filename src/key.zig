@@ -6,39 +6,39 @@ pub const Error = error{
     InvalidMagicString,
 } || proto.Error;
 
-pub const Magic = enum(u3) {
-    ssh_rsa,
-    ecdsa_sha2_nistp256,
-    ecdsa_sha2_nistp384,
-    ecdsa_sha2_nistp521,
-    ssh_ed25519,
-
-    const Self = @This();
-
-    const strings = proto.enum_to_str(Self, "");
-
-    pub fn as_string(self: *const Self) []const u8 {
-        return strings[@intFromEnum(self.*)];
-    }
-
-    pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Magic) {
-        const next, const magic = try proto.rfc4251.parse_string(src);
-
-        for (Self.strings, 0..) |s, i|
-            if (std.mem.eql(u8, s, magic))
-                return .{ next, @enumFromInt(i) };
-
-        return proto.Error.InvalidData;
-    }
-
-    pub fn from_bytes(src: []const u8) Error!Magic {
-        _, const magic = Self.parse(src) catch return Error.InvalidMagicString;
-
-        return magic;
-    }
-};
-
 pub const public = struct {
+    pub const Magic = enum(u3) {
+        ssh_rsa,
+        ecdsa_sha2_nistp256,
+        ecdsa_sha2_nistp384,
+        ecdsa_sha2_nistp521,
+        ssh_ed25519,
+
+        const Self = @This();
+
+        const strings = proto.enum_to_str(Self, "");
+
+        pub fn as_string(self: *const Self) []const u8 {
+            return strings[@intFromEnum(self.*)];
+        }
+
+        pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Magic) {
+            const next, const magic = try proto.rfc4251.parse_string(src);
+
+            for (Self.strings, 0..) |s, i|
+                if (std.mem.eql(u8, s, magic))
+                    return .{ next, @enumFromInt(i) };
+
+            return proto.Error.InvalidData;
+        }
+
+        pub fn from_bytes(src: []const u8) Error!Magic {
+            _, const magic = Self.parse(src) catch return Error.InvalidMagicString;
+
+            return magic;
+        }
+    };
+
     pub const Pem = struct {
         magic: []const u8,
         der: []u8,
@@ -113,6 +113,34 @@ pub const public = struct {
 };
 
 pub const private = struct {
+    pub const Magic = enum(u1) {
+        openssh_key_v1,
+
+        const Self = @This();
+
+        const strings = proto.enum_to_str(Self, "");
+
+        pub fn as_string(self: *const Self) []const u8 {
+            return strings[@intFromEnum(self.*)];
+        }
+
+        pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Magic) {
+            const next, const magic = try proto.read_null_terminated(src);
+
+            for (Self.strings, 0..) |s, i|
+                if (std.mem.eql(u8, s, magic))
+                    return .{ next, @enumFromInt(i) };
+
+            return proto.Error.InvalidData;
+        }
+
+        pub fn from_bytes(src: []const u8) Error!Magic {
+            _, const magic = Self.parse(src) catch return Error.InvalidMagicString;
+
+            return magic;
+        }
+    };
+
     pub const Pem = struct {
         _prefix: proto.Literal("BEGIN OPENSSH PRIVATE KEY"),
         der: []u8,
@@ -123,5 +151,19 @@ pub const private = struct {
         }
     };
 
-    pub const RSA = struct {};
+    pub const RSA = struct {
+        magic: Magic,
+        chipher_name: []const u8,
+        kdf_name: []const u8,
+        kdf: u32,
+        number_of_keys: u32,
+        public_key: []const u8,
+        private_key: []const u8, // TODO: parts
+
+        const Self = @This();
+
+        pub fn from(src: []const u8) Error!RSA {
+            return try proto.parse(Self, src);
+        }
+    };
 };
