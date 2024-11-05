@@ -44,7 +44,7 @@ fn GenericIteratorImpl(comptime T: type, parse_value: anytype) type {
 
 fn GenericIterator(comptime parse_value: anytype) type {
     const T = switch (@typeInfo(@TypeOf(parse_value))) {
-        .Fn => |func| func.return_type.?,
+        .@"fn" => |func| func.return_type.?,
         else => @compileError("Expected fn"),
     };
 

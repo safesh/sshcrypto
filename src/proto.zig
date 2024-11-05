@@ -13,7 +13,7 @@ pub const Error = error{
 };
 
 pub fn enum_to_str(comptime T: type, sufix: []const u8) [std.meta.fields(T).len][]const u8 {
-    if (@typeInfo(T) != .Enum) @compileError("Expected enum");
+    if (@typeInfo(T) != .@"enum") @compileError("Expected enum");
 
     const fields = comptime std.meta.fields(T);
 

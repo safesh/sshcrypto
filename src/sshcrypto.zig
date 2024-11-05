@@ -17,7 +17,7 @@ pub const Error = error{
 /// TODO: Memory is owned by Der, with refrences to the original data which
 /// **SHOULD** outlive Der.
 pub fn GenericDecoder(comptime T: type, comptime D: type) type {
-    if (@typeInfo(T) != .Struct)
+    if (@typeInfo(T) != .@"struct")
         @compileError("Expected struct");
 
     if (!@hasDecl(T, "tokenize"))
@@ -82,7 +82,7 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
                 const val = it.next() orelse
                     return error.InvalidFileFormat;
 
-                if (@typeInfo(field.type) == .Struct and @hasDecl(field.type, "parse")) {
+                if (@typeInfo(field.type) == .@"struct" and @hasDecl(field.type, "parse")) {
                     try field.type.parse(val);
 
                     continue;
