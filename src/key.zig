@@ -141,6 +141,60 @@ pub const private = struct {
         }
     };
 
+    pub const Cipher = struct {
+        name: []const u8,
+        block_size: u32,
+        key_len: u32,
+        iv_len: u32,
+        auth_len: u32,
+
+        const Self = @This();
+
+        const ciphers = [_]Self{
+            // Taken from openssl-portable
+            // TODO: Add OpenSSL ciphers
+            // .{ "openssl-3des-cbc", 8, 24, 0, 0 },
+            // .{ "openssl-aes128-cbc", 16, 16, 0, 0 },
+            // .{ "openssl-aes192-cbc", 16, 24, 0, 0 },
+            // .{ "openssl-aes256-cbc", 16, 32, 0, 0 },
+            // .{ "openssl-aes128-ctr", 16, 16, 0, 0 },
+            // .{ "openssl-aes192-ctr", 16, 24, 0, 0 },
+            // .{ "openssl-aes256-ctr", 16, 32, 0, 0 },
+            // .{ "openssl-aes128-gcm@openssh.com", 16, 16, 12, 16 },
+            // .{ "openssl-aes256-gcm@openssh.com", 16, 32, 12, 16 },
+            .{ .name = "aes128-ctr", .block_size = 16, .key_len = 16, .iv_len = 0, .auth_len = 0 },
+            .{ .name = "aes192-ctr", .block_size = 16, .key_len = 24, .iv_len = 0, .auth_len = 0 },
+            .{ .name = "aes256-ctr", .block_size = 16, .key_len = 32, .iv_len = 0, .auth_len = 0 },
+            .{ .name = "chacha20-poly1305@openssh.com", .block_size = 8, .key_len = 64, .iv_len = 0, .auth_len = 16 },
+            .{ .name = "none", .block_size = 8, .key_len = 0, .iv_len = 0, .auth_len = 0 },
+        };
+
+        pub fn get_supported_ciphers() [ciphers.len][]const u8 {
+            comptime var ret: [ciphers.len][]const u8 = undefined;
+
+            comptime var i = 0;
+            inline for (comptime ciphers) |cipher| {
+                ret[i] = cipher.name;
+
+                i += 1;
+            }
+
+            return ret;
+        }
+
+        pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Cipher) {
+            const next, const name = try proto.rfc4251.parse_string(src);
+
+            for (Self.ciphers) |cipher| {
+                if (std.mem.eql(u8, name, cipher.name)) {
+                    return .{ next, cipher };
+                }
+            }
+
+            return proto.Error.InvalidData;
+        }
+    };
+
     pub const Pem = struct {
         _prefix: proto.Literal("BEGIN OPENSSH PRIVATE KEY"),
         der: []u8,
@@ -151,18 +205,38 @@ pub const private = struct {
         }
     };
 
+    pub const Kdf = struct {
+        salt: []const u8,
+        rounds: u32,
+
+        const Self = @This();
+
+        pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Kdf) {
+            const next, const kdf = try proto.rfc4251.parse_string(src);
+
+            if (kdf.len == 0)
+                // FIXME: We should return an optional here, to do so need to
+                // allow the generic parser to suport optional types.
+                return .{ next, undefined };
+
+            return .{ next, try proto.parse(Self, kdf) };
+        }
+    };
+
     pub const RSA = struct {
         magic: Magic,
-        chipher_name: []const u8,
+        cipher: Cipher,
         kdf_name: []const u8,
-        kdf: u32,
+        kdf: Kdf, // TODO: Make this optional
         number_of_keys: u32,
         public_key_blob: []const u8,
         private_key_blob: []const u8,
 
+        const Self = @This();
+
         pub const Key = struct {
-            check: u64,
-            key_type: []const u8,
+            checksum: u64,
+            kind: []const u8,
             // Public key parts
             n: []const u8,
             e: []const u8,
@@ -178,13 +252,50 @@ pub const private = struct {
             fn from(src: []const u8) Error!Key {
                 return try proto.parse(Key, src);
             }
-
-            pub inline fn from_bytes(src: []const u8) Error!Key {
-                return try Key.from(src);
-            }
         };
 
-        const Self = @This();
+        pub fn get_key(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+            passphrase: ?[]const u8,
+        ) !Key {
+            if (!std.mem.eql(u8, self.cipher.name, "none") and passphrase == null)
+                return error.MissingPassphrase;
+
+            // TODO: Make this generic.
+            if (std.mem.eql(u8, self.cipher.name, "aes256-ctr")) {
+                const out = try allocator.alloc(u8, self.private_key_blob.len);
+                defer allocator.free(out);
+
+                var keyiv = std.mem.zeroes([32 + 16]u8);
+
+                // const salt = [_]u8{ 14, 207, 137, 239, 36, 47, 18, 27, 10, 27, 125, 98, 84, 59, 110, 232 };
+
+                try std.crypto.pwhash.bcrypt.pbkdf(
+                    passphrase.?,
+                    self.kdf.salt,
+                    &keyiv,
+                    self.kdf.rounds,
+                );
+
+                const key: [32]u8 = keyiv[0..32].*;
+                const iv: [16]u8 = keyiv[32..].*;
+
+                const ctx = std.crypto.core.aes.Aes256.initEnc(key);
+                std.crypto.core.modes.ctr(
+                    std.crypto.core.aes.AesEncryptCtx(std.crypto.core.aes.Aes256),
+                    ctx,
+                    out,
+                    self.private_key_blob,
+                    iv,
+                    std.builtin.Endian.big,
+                );
+
+                @panic("TODO: fix zig's pbkdf impl.");
+            }
+
+            return Key.from(self.private_key_blob);
+        }
 
         pub fn from(src: []const u8) Error!RSA {
             return try proto.parse(Self, src);

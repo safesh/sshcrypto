@@ -7,8 +7,11 @@ C="root@locahost"
 
 FILE_NAME="key"
 
-while getopts ":t:c:" opt; do
+while getopts ":t:c:f:" opt; do
     case $opt in
+    f)
+        FILE_NAME="$OPTARG"
+        ;;
     t)
         T="$OPTARG"
         ;;
