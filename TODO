@@ -1,4 +1,5 @@
-- Parse private keys
+- Support all private key types
 - Verify certificate signature
 - Support key and certificate comments
 - Support SSH revocation lists
+- Fuzz
