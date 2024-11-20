@@ -113,6 +113,24 @@ pub const public = struct {
 };
 
 pub const private = struct {
+    pub fn Managed(comptime T: type) type {
+        return struct {
+            allocator: ?std.mem.Allocator,
+            ref: []u8,
+            data: T,
+
+            const Self = @This();
+
+            pub fn deinit(self: *Self) void {
+                // NOTE: Not so sure if this makes any sense, but it's better not to leak this memory
+                if (self.allocator) |allocator| {
+                    std.crypto.secureZero(u8, self.ref);
+                    allocator.free(self.ref);
+                }
+            }
+        };
+    }
+
     pub const Magic = enum(u1) {
         openssh_key_v1,
 
@@ -221,6 +239,25 @@ pub const private = struct {
 
             return .{ next, try proto.parse(Self, kdf) };
         }
+
+        // NOTE: Hack while we wait for zig
+        pub inline fn intersperse_key(keyiv: []u8) []u8 {
+            var a = std.mem.zeroes([24]u8);
+            var b = std.mem.zeroes([24]u8);
+
+            @memcpy(a[0..24], keyiv[0..24]);
+            @memcpy(b[0..24], keyiv[32..56]);
+
+            var i: u32 = 0;
+            for (a, b) |p, q| {
+                keyiv[i] = p;
+                keyiv[i + 1] = q;
+
+                i += 2;
+            }
+
+            return keyiv[0..48];
+        }
     };
 
     pub const RSA = struct {
@@ -254,22 +291,25 @@ pub const private = struct {
             }
         };
 
+        pub fn get_public_key() void {
+            // TODO:
+        }
+
         pub fn get_key(
             self: *const Self,
             allocator: std.mem.Allocator,
             passphrase: ?[]const u8,
-        ) !Key {
+        ) !Managed(Key) {
             if (!std.mem.eql(u8, self.cipher.name, "none") and passphrase == null)
                 return error.MissingPassphrase;
 
             // TODO: Make this generic.
             if (std.mem.eql(u8, self.cipher.name, "aes256-ctr")) {
                 const out = try allocator.alloc(u8, self.private_key_blob.len);
-                defer allocator.free(out);
+                errdefer allocator.free(out);
 
-                var keyiv = std.mem.zeroes([32 + 16]u8);
-
-                // const salt = [_]u8{ 14, 207, 137, 239, 36, 47, 18, 27, 10, 27, 125, 98, 84, 59, 110, 232 };
+                var keyiv = std.mem.zeroes([32 + 32]u8);
+                errdefer std.crypto.secureZero(u8, &keyiv);
 
                 try std.crypto.pwhash.bcrypt.pbkdf(
                     passphrase.?,
@@ -278,8 +318,10 @@ pub const private = struct {
                     self.kdf.rounds,
                 );
 
-                const key: [32]u8 = keyiv[0..32].*;
-                const iv: [16]u8 = keyiv[32..].*;
+                const fixed_keyiv = Kdf.intersperse_key(&keyiv);
+
+                const key: [32]u8 = fixed_keyiv[0..32].*;
+                const iv: [16]u8 = fixed_keyiv[32..48].*;
 
                 const ctx = std.crypto.core.aes.Aes256.initEnc(key);
                 std.crypto.core.modes.ctr(
@@ -291,10 +333,18 @@ pub const private = struct {
                     std.builtin.Endian.big,
                 );
 
-                @panic("TODO: fix zig's pbkdf impl.");
+                return .{
+                    .allocator = allocator,
+                    .ref = out,
+                    .data = try Key.from(out),
+                };
             }
 
-            return Key.from(self.private_key_blob);
+            return .{
+                .allocator = null,
+                .ref = undefined,
+                .data = try Key.from(self.private_key_blob),
+            };
         }
 
         pub fn from(src: []const u8) Error!RSA {

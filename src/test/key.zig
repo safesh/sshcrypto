@@ -42,23 +42,23 @@ test "rsa private key" {
     const private_key = try key.get_key(std.testing.allocator, null);
 
     try expect_eql(
-        @as(u32, @truncate(private_key.checksum >> @bitSizeOf(u32))),
-        @as(u32, @truncate(private_key.checksum)),
+        @as(u32, @truncate(private_key.data.checksum >> @bitSizeOf(u32))),
+        @as(u32, @truncate(private_key.data.checksum)),
     );
-    try expect(std.mem.eql(u8, private_key.kind, "ssh-rsa"));
+    try expect(std.mem.eql(u8, private_key.data.kind, "ssh-rsa"));
 }
 
-// test "rsa private key with passphrase" {
-//     const pem = try key_decoder.decode(@embedFile("rsa-key-123"));
-//     defer pem.deinit();
-//
-//     const key = try sshcrypto.key.private.RSA.from(pem.data.der);
-//
-//     _ = try key.get_key(std.testing.allocator, "123");
-//
-//     std.debug.print("{s}\n", .{key.cipher.name});
-//     std.debug.print("{any}\n", .{key.kdf});
-// }
+test "rsa private key with passphrase" {
+    const pem = try key_decoder.decode(@embedFile("rsa-key-123"));
+    defer pem.deinit();
+
+    const key = try sshcrypto.key.private.RSA.from(pem.data.der);
+
+    var private_key = try key.get_key(std.testing.allocator, "123");
+    defer private_key.deinit();
+
+    try expect(std.mem.eql(u8, private_key.data.kind, "ssh-rsa"));
+}
 
 // test "supported chipers" {
 //     for (sshcrypto.key.private.Cipher.get_supported_ciphers()) |cipher| {
