@@ -127,7 +127,8 @@ pub const private = struct {
             const Self = @This();
 
             pub fn deinit(self: *Self) void {
-                // NOTE: Not so sure if this makes any sense, but it's better not to leak this memory
+                // NOTE: Not so sure if this makes any sense, but it's better
+                // not to leak this memory
                 if (self.allocator) |allocator| {
                     std.crypto.secureZero(u8, self.ref);
                     allocator.free(self.ref);
@@ -278,7 +279,7 @@ pub const private = struct {
         const Self = @This();
 
         pub const Key = struct {
-            checksum: u64, // TODO: Check this a parse
+            checksum: u64,
             kind: []const u8,
             // Public key parts
             n: []const u8,
@@ -289,11 +290,10 @@ pub const private = struct {
             p: []const u8,
             q: []const u8,
             comment: []const u8,
-
             _pad: proto.Padding,
 
             pub fn check_checksum(self: *const Key) bool {
-                return @as(u32, @truncate(self.checksum >> @bitSizeOf(u32))) ==
+                return @as(u32, @truncate(std.math.shr(u64, self.checksum, @bitSizeOf(u32)))) ==
                     @as(u32, @truncate(self.checksum));
             }
 

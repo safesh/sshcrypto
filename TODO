@@ -1,3 +1,4 @@
+- Perf keys
 - Support all private key types
 - Verify certificate signature
 - Support key and certificate comments

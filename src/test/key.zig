@@ -55,6 +55,8 @@ test "rsa private key with passphrase" {
     var private_key = try key.get_private_key(std.testing.allocator, "123");
     defer private_key.deinit();
 
+    try expect(private_key.data._pad.verify());
+
     try expect(std.mem.eql(u8, private_key.data.kind, "ssh-rsa"));
 
     // TODO: Check other fields

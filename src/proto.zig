@@ -84,6 +84,17 @@ pub fn read_null_terminated(src: []const u8) Error!Cont([:0]u8) {
 pub const Padding = struct {
     _pad: []const u8,
 
+    const Self = @This();
+
+    /// Returns true if padding is valid, i.e., it's a sequence.
+    pub fn verify(self: *const Self) bool {
+        for (1.., self._pad) |i, pad| {
+            if (i != pad) return false;
+        }
+
+        return true;
+    }
+
     pub inline fn parse(src: []const u8) Error!Cont(Padding) {
         return .{ src.len, .{ ._pad = src } };
     }
