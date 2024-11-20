@@ -38,14 +38,12 @@ test "rsa private key" {
 
     const key = try sshcrypto.key.private.RSA.from(pem.data.der);
 
-    _ = try sshcrypto.key.public.RSA.from_bytes(key.public_key_blob);
-    const private_key = try key.get_key(std.testing.allocator, null);
+    _ = try key.get_public_key();
+    const private_key = try key.get_private_key(std.testing.allocator, null);
 
-    try expect_eql(
-        @as(u32, @truncate(private_key.data.checksum >> @bitSizeOf(u32))),
-        @as(u32, @truncate(private_key.data.checksum)),
-    );
     try expect(std.mem.eql(u8, private_key.data.kind, "ssh-rsa"));
+
+    // TODO: Check other fields
 }
 
 test "rsa private key with passphrase" {
@@ -54,10 +52,12 @@ test "rsa private key with passphrase" {
 
     const key = try sshcrypto.key.private.RSA.from(pem.data.der);
 
-    var private_key = try key.get_key(std.testing.allocator, "123");
+    var private_key = try key.get_private_key(std.testing.allocator, "123");
     defer private_key.deinit();
 
     try expect(std.mem.eql(u8, private_key.data.kind, "ssh-rsa"));
+
+    // TODO: Check other fields
 }
 
 // test "supported chipers" {

@@ -4,6 +4,7 @@ const proto = @import("proto.zig");
 
 pub const Error = error{
     InvalidMagicString,
+    InvalidChecksum,
 } || proto.Error;
 
 pub const public = struct {
@@ -272,7 +273,7 @@ pub const private = struct {
         const Self = @This();
 
         pub const Key = struct {
-            checksum: u64,
+            checksum: u64, // TODO: Check this a parse
             kind: []const u8,
             // Public key parts
             n: []const u8,
@@ -286,21 +287,35 @@ pub const private = struct {
 
             _pad: proto.Padding,
 
+            pub fn check_checksum(self: *const Key) bool {
+                return @as(u32, @truncate(self.checksum >> @bitSizeOf(u32))) ==
+                    @as(u32, @truncate(self.checksum));
+            }
+
             fn from(src: []const u8) Error!Key {
-                return try proto.parse(Key, src);
+                const key = try proto.parse(Key, src);
+
+                if (!key.check_checksum()) return error.InvalidChecksum;
+
+                return key;
             }
         };
 
-        pub fn get_public_key() void {
-            // TODO:
+        pub fn get_public_key(self: *const Self) !public.RSA {
+            return public.RSA.from(self.public_key_blob);
         }
 
-        pub fn get_key(
+        /// Returns `true` if the `private_key_blob` is encrypted, i.e., cipher.name != "none"
+        pub inline fn is_encrypted(self: *const Self) bool {
+            return !std.mem.eql(u8, self.cipher.name, "none");
+        }
+
+        pub fn get_private_key(
             self: *const Self,
             allocator: std.mem.Allocator,
             passphrase: ?[]const u8,
         ) !Managed(Key) {
-            if (!std.mem.eql(u8, self.cipher.name, "none") and passphrase == null)
+            if (self.is_encrypted() and passphrase == null)
                 return error.MissingPassphrase;
 
             // TODO: Make this generic.
