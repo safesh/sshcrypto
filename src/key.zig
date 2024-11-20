@@ -3,7 +3,11 @@ const std = @import("std");
 const proto = @import("proto.zig");
 
 pub const Error = error{
+    /// This indicates, either, PEM corruption, or key corruption.
     InvalidMagicString,
+    /// The checksum for private keys is invalid, meaning either,
+    /// decryption was not successful, or data is corrupted. This is NOT an auth
+    /// form error.
     InvalidChecksum,
 } || proto.Error;
 
@@ -214,6 +218,7 @@ pub const private = struct {
         }
     };
 
+    /// "Newer" OpenSSH private key format
     pub const Pem = struct {
         _prefix: proto.Literal("BEGIN OPENSSH PRIVATE KEY"),
         der: []u8,
@@ -235,7 +240,7 @@ pub const private = struct {
 
             if (kdf.len == 0)
                 // FIXME: We should return an optional here, to do so need to
-                // allow the generic parser to suport optional types.
+                // allow the generic parser to support optional types.
                 return .{ next, undefined };
 
             return .{ next, try proto.parse(Self, kdf) };
@@ -362,7 +367,7 @@ pub const private = struct {
             };
         }
 
-        pub fn from(src: []const u8) Error!RSA {
+        fn from(src: []const u8) Error!RSA {
             return try proto.parse(Self, src);
         }
 

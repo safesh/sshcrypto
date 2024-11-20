@@ -8,6 +8,7 @@ const std = @import("std");
 const proto = @import("proto.zig");
 
 pub const Error = error{
+    /// This indicates, either, PEM corruption, or certificate corruption.
     InvalidMagicString,
     /// As per spec, repeated extension are not allowed.
     RepeatedExtension,
