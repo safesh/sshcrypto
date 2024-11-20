@@ -218,7 +218,7 @@ pub const private = struct {
         }
     };
 
-    /// "Newer" OpenSSH private key format
+    /// "Newer" OpenSSH private key format. Will NOT work with old PKCS #1 or SECG keys.
     pub const Pem = struct {
         _prefix: proto.Literal("BEGIN OPENSSH PRIVATE KEY"),
         der: []u8,
@@ -376,7 +376,6 @@ pub const private = struct {
         }
 
         pub inline fn from_pem(pem: Pem) Error!RSA {
-            // XXX: Check if PEM magic matches what we got from the DER
             return try Self.from(pem.der);
         }
     };
