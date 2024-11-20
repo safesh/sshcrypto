@@ -248,14 +248,14 @@ pub const private = struct {
 
         // NOTE: Hack while we wait for zig
         pub inline fn intersperse_key(keyiv: []u8) []u8 {
-            var a = std.mem.zeroes([24]u8);
-            var b = std.mem.zeroes([24]u8);
+            var tmp = std.mem.zeroes([48]u8);
+            defer std.crypto.secureZero(u8, &tmp);
 
-            @memcpy(a[0..24], keyiv[0..24]);
-            @memcpy(b[0..24], keyiv[32..56]);
+            @memcpy(tmp[0..24], keyiv[0..24]);
+            @memcpy(tmp[24..], keyiv[32..56]);
 
             var i: u32 = 0;
-            for (a, b) |p, q| {
+            for (tmp[0..24], tmp[24..]) |p, q| {
                 keyiv[i] = p;
                 keyiv[i + 1] = q;
 
