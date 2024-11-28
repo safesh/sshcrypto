@@ -58,8 +58,29 @@ test "rsa private key with passphrase" {
     try expect(private_key.data._pad.verify());
 
     try expect(std.mem.eql(u8, private_key.data.kind, "ssh-rsa"));
+    try expect(std.mem.eql(u8, private_key.data.comment, "root@locahost")); // XXX: Fix typo
 
     // TODO: Check other fields
+}
+
+test "ed25519 private key" {
+    const pem = try key_decoder.decode(@embedFile("ed25519-key"));
+    defer pem.deinit();
+
+    const key = try sshcrypto.key.private.ED25519.from_pem(pem.data);
+
+    _ = try key.get_public_key();
+
+    const private_key = try key.get_private_key();
+
+    try expect(std.mem.eql(u8, private_key.kind, "ssh-ed25519"));
+    try expect(std.mem.eql(u8, private_key.comment, "root@locahost"));
+    // TODO: check other fields
+}
+
+test "ed25519 private key with passphrase" {
+    const pem = try key_decoder.decode(@embedFile("ed25519-key-123"));
+    defer pem.deinit();
 }
 
 // test "supported chipers" {

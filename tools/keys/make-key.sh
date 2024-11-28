@@ -3,7 +3,7 @@
 set -e
 
 T="rsa"
-C="root@locahost"
+C="root@localhost"
 
 FILE_NAME="key"
 

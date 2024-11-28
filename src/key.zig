@@ -267,6 +267,11 @@ pub const private = struct {
         }
     };
 
+    inline fn check_checksum(checksum: u64) bool {
+        return @as(u32, @truncate(std.math.shr(u64, checksum, @bitSizeOf(u32)))) ==
+            @as(u32, @truncate(checksum));
+    }
+
     pub const RSA = struct {
         magic: Magic,
         cipher: Cipher,
@@ -293,8 +298,7 @@ pub const private = struct {
             _pad: proto.Padding,
 
             pub fn check_checksum(self: *const Key) bool {
-                return @as(u32, @truncate(std.math.shr(u64, self.checksum, @bitSizeOf(u32)))) ==
-                    @as(u32, @truncate(self.checksum));
+                return private.check_checksum(self.checksum);
             }
 
             fn from(src: []const u8) Error!Key {
@@ -376,6 +380,61 @@ pub const private = struct {
         }
 
         pub inline fn from_pem(pem: Pem) Error!RSA {
+            return try Self.from(pem.der);
+        }
+    };
+
+    pub const ED25519 = struct {
+        magic: Magic,
+        cipher: Cipher,
+        kdf_name: []const u8,
+        kdf: Kdf, // TODO: Make this optional
+        number_of_keys: u32,
+        public_key_blob: []const u8,
+        private_key_blob: []const u8,
+
+        const Self = @This();
+
+        pub const Key = struct {
+            checksum: u64,
+            kind: []const u8,
+            // Public key parts
+            pk: []const u8,
+            // Private key parts
+            sk: []const u8,
+            comment: []const u8,
+            _pad: proto.Padding,
+
+            pub fn check_checksum(self: *const Key) bool {
+                return private.check_checksum(self.checksum);
+            }
+
+            fn from(src: []const u8) Error!Key {
+                const key = try proto.parse(Key, src);
+
+                if (!key.check_checksum()) return error.InvalidChecksum;
+
+                return key;
+            }
+        };
+
+        pub fn get_public_key(self: *const Self) !public.ED25519 {
+            return public.ED25519.from(self.public_key_blob);
+        }
+
+        pub fn get_private_key(self: *const Self) !Key {
+            return Key.from(self.private_key_blob);
+        }
+
+        fn from(src: []const u8) Error!ED25519 {
+            return try proto.parse(Self, src);
+        }
+
+        pub inline fn from_bytes(src: []const u8) Error!ED25519 {
+            return try Self.from(src);
+        }
+
+        pub inline fn from_pem(pem: Pem) Error!ED25519 {
             return try Self.from(pem.der);
         }
     };
