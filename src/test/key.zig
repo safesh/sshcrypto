@@ -83,6 +83,15 @@ test "ed25519 private key with passphrase" {
     defer pem.deinit();
 }
 
+test "ed25519 get_private_key" {
+    const pem = try key_decoder.decode(@embedFile("ed25519-key"));
+    defer pem.deinit();
+
+    const key = try sshcrypto.key.private.Ed25519.from_pem(pem.data);
+
+    _ = try key.get_private_key();
+}
+
 // test "supported chipers" {
 //     for (sshcrypto.key.private.Cipher.get_supported_ciphers()) |cipher| {
 //         std.debug.print("{s}\n", .{cipher});

@@ -384,6 +384,46 @@ pub const private = struct {
         }
     };
 
+    pub fn AnyKey(comptime Pub: type, comptime Pri: type) type {
+        return struct {
+            magic: Magic,
+            cipher: Cipher,
+            kdf_name: []const u8,
+            kdf: Kdf, // TODO: Make this optional
+            number_of_keys: u32,
+            public_key_blob: []const u8,
+            private_key_blob: []const u8,
+
+            const Self = @This();
+
+            pub fn get_public_key(self: *const Self) !Pub {
+                if (!@hasDecl(Pri, "from_bytes"))
+                    @compileError("Type `Pub` does not declare `from_bytes([]const u8)`");
+
+                return Pub.from_bytes(self.public_key_blob);
+            }
+
+            pub fn get_private_key(self: *const Self) !Pri {
+                if (!@hasDecl(Pri, "from_bytes"))
+                    @compileError("Type `Pri` does not declare `from_bytes([]const u8)`");
+
+                return Pri.from_bytes(self.private_key_blob);
+            }
+
+            fn from(src: []const u8) Error!Self {
+                return try proto.parse(Self, src);
+            }
+
+            pub inline fn from_bytes(src: []const u8) Error!Self {
+                return try Self.from(src);
+            }
+
+            pub inline fn from_pem(pem: Pem) Error!Self {
+                return try Self.from(pem.der);
+            }
+        };
+    }
+
     pub const ED25519 = struct {
         magic: Magic,
         cipher: Cipher,
@@ -438,4 +478,66 @@ pub const private = struct {
             return try Self.from(pem.der);
         }
     };
+
+    pub const Rsa = private.AnyKey(public.RSA, struct {
+        checksum: u64,
+        kind: []const u8,
+        // Public key parts
+        n: []const u8,
+        e: []const u8,
+        // Private key parts
+        d: []const u8,
+        i: []const u8,
+        p: []const u8,
+        q: []const u8,
+        comment: []const u8,
+        _pad: proto.Padding,
+
+        const Self = @This();
+
+        pub fn check_checksum(self: *const Self) bool {
+            return private.check_checksum(self.checksum);
+        }
+
+        pub fn form_bytes(src: []const u8) Error!@This() {
+            return @This().from(src);
+        }
+
+        inline fn from(src: []const u8) Error!@This() {
+            const key = try proto.parse(@This(), src);
+
+            if (!key.check_checksum()) return error.InvalidChecksum;
+
+            return key;
+        }
+    });
+
+    pub const Ed25519 = private.AnyKey(public.ED25519, struct {
+        checksum: u64,
+        kind: []const u8,
+        // Public key parts
+        pk: []const u8,
+        // Private key parts
+        sk: []const u8,
+        comment: []const u8,
+        _pad: proto.Padding,
+
+        const Self = @This();
+
+        pub fn check_checksum(self: *const Self) bool {
+            return private.check_checksum(self.checksum);
+        }
+
+        pub fn from_bytes(src: []const u8) Error!Self {
+            return @This().from(src);
+        }
+
+        fn from(src: []const u8) Error!Self {
+            const key = try proto.parse(Self, src);
+
+            if (!key.check_checksum()) return error.InvalidChecksum;
+
+            return key;
+        }
+    });
 };
