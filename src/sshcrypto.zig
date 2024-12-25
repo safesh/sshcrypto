@@ -134,14 +134,27 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
         }
 
         pub fn decode(self: *const Self, src: []const u8) !Managed(T) {
-            // XXX: autfile.c:sshkey_save_public saves the comment with a new
-            // line ending, this will be true as well if there's is no comment,
-            // we just ignore it since other tools that generate sshkeys might
-            // not have this behavior.
-            const ref = if (src.len >= 1 and src[src.len - 1] == 0x0a)
-                src[0 .. src.len - 1]
-            else
-                src[0..];
+            const builtin = @import("builtin");
+            // XXX: ssh-keygen -> authfile.c:sshkey_save_public saves the
+            // comment with a new line ending (\r\n on Windows), this will be
+            // true as well if there's is no comment. We just ignore it since
+            // other tools that generate sshkeys might not have this behavior,
+            // and it makes little sense to show this to user.
+            const ref = blk: {
+                if (comptime builtin.os.tag == .windows) {
+                    break :blk if (src.len >= 2 and src[src.len - 2] == 0x0D and src[src.len - 1] == 0x0A)
+                        src[0 .. src.len - 2]
+                    else if (src.len >= 1 and src[src.len - 1] == 0x0A) // We might no have the correct encoding
+                        src[0 .. src.len - 1]
+                    else
+                        src[0..];
+                } else {
+                    break :blk if (src.len >= 1 and src[src.len - 1] == 0x0A)
+                        src[0 .. src.len - 1]
+                    else
+                        src[0..];
+                }
+            };
 
             var ret: Self.Managed(T) = .{
                 .allocator = self.allocator,
