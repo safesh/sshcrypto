@@ -100,6 +100,16 @@ pub const Padding = struct {
     }
 };
 
+pub fn Blob(comptime T: type) type {
+    return struct {
+        val: T,
+
+        pub fn blob(val: T) @This() {
+            return .{ .val = val };
+        }
+    };
+}
+
 pub fn Literal(comptime L: []const u8) type {
     return struct {
         pub inline fn parse(src: []const u8) Error!void {

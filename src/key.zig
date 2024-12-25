@@ -44,10 +44,12 @@ pub const public = struct {
         }
     };
 
+    // TODO: add support for FIDO2/U2F keys
+
     pub const Pem = struct {
         magic: []const u8,
         der: []u8,
-        comment: []const u8,
+        comment: proto.Blob([]const u8),
 
         pub inline fn tokenize(src: []const u8) std.mem.TokenIterator(u8, .any) {
             return std.mem.tokenizeAny(u8, src, " ");
@@ -396,18 +398,71 @@ pub const private = struct {
 
             const Self = @This();
 
+            /// Returns `true` if the `private_key_blob` is encrypted, i.e.,
+            /// cipher.name != "none"
+            pub inline fn is_encrypted(self: *const Self) bool {
+                return !std.mem.eql(u8, self.cipher.name, "none");
+            }
+
             pub fn get_public_key(self: *const Self) !Pub {
-                if (!@hasDecl(Pri, "from_bytes"))
+                if (!@hasDecl(Pub, "from_bytes"))
                     @compileError("Type `Pub` does not declare `from_bytes([]const u8)`");
 
                 return Pub.from_bytes(self.public_key_blob);
             }
 
-            pub fn get_private_key(self: *const Self) !Pri {
+            pub fn get_private_key(
+                self: *const Self,
+                allocator: std.mem.Allocator,
+                passphrase: ?[]const u8,
+            ) !Managed(Pri) {
                 if (!@hasDecl(Pri, "from_bytes"))
                     @compileError("Type `Pri` does not declare `from_bytes([]const u8)`");
 
-                return Pri.from_bytes(self.private_key_blob);
+                if (self.is_encrypted() and passphrase == null)
+                    return error.MissingPassphrase;
+
+                if (std.mem.eql(u8, self.cipher.name, "aes256-ctr")) {
+                    const out = try allocator.alloc(u8, self.private_key_blob.len);
+                    errdefer allocator.free(out);
+
+                    var keyiv = std.mem.zeroes([32 + 32]u8);
+                    errdefer std.crypto.secureZero(u8, &keyiv);
+
+                    try std.crypto.pwhash.bcrypt.pbkdf(
+                        passphrase.?,
+                        self.kdf.salt,
+                        &keyiv,
+                        self.kdf.rounds,
+                    );
+
+                    const fixed_keyiv = Kdf.intersperse_key(&keyiv);
+
+                    const key: [32]u8 = fixed_keyiv[0..32].*;
+                    const iv: [16]u8 = fixed_keyiv[32..48].*;
+
+                    const ctx = std.crypto.core.aes.Aes256.initEnc(key);
+                    std.crypto.core.modes.ctr(
+                        std.crypto.core.aes.AesEncryptCtx(std.crypto.core.aes.Aes256),
+                        ctx,
+                        out,
+                        self.private_key_blob,
+                        iv,
+                        std.builtin.Endian.big,
+                    );
+
+                    return .{
+                        .allocator = allocator,
+                        .ref = out,
+                        .data = try Pri.from_bytes(out),
+                    };
+                }
+
+                return .{
+                    .allocator = null,
+                    .ref = undefined, // FIXME: We should provider the ref
+                    .data = try Pri.from_bytes(self.private_key_blob),
+                };
             }
 
             fn from(src: []const u8) Error!Self {

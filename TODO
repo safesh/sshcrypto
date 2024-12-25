@@ -1,7 +1,6 @@
-- Fix comments with space
 - Perf keys
 - Support all private key types
 - Verify certificate signature
-- Support key and certificate comments
 - Support SSH revocation lists
 - Fuzz
+- Support for FIDO2/U2F keys (see PROTOCOL.u2f)

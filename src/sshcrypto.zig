@@ -78,7 +78,15 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
 
             var ret: T = undefined;
 
+            // FIXME: This turned out to be a not so elegant approach. But it
+            // works for now.
             inline for (comptime std.meta.fields(T)) |field| {
+                if (@typeInfo(field.type) == .@"struct" and @hasDecl(field.type, "blob")) {
+                    @field(ret, field.name) = field.type.blob(it.rest());
+
+                    continue;
+                }
+
                 const val = it.next() orelse
                     return error.InvalidFileFormat;
 
@@ -126,9 +134,18 @@ pub fn GenericDecoder(comptime T: type, comptime D: type) type {
         }
 
         pub fn decode(self: *const Self, src: []const u8) !Managed(T) {
+            // XXX: autfile.c:sshkey_save_public saves the comment with a new
+            // line ending, this will be true as well if there's is no comment,
+            // we just ignore it since other tools that generate sshkeys might
+            // not have this behavior.
+            const ref = if (src.len >= 1 and src[src.len - 1] == 0x0a)
+                src[0 .. src.len - 1]
+            else
+                src[0..];
+
             var ret: Self.Managed(T) = .{
                 .allocator = self.allocator,
-                .data = try Self.parse_fields(src),
+                .data = try Self.parse_fields(ref),
             };
 
             // Since Zig's `Base64DecoderWithIgnore` does not support `calcSizeForSlice`
