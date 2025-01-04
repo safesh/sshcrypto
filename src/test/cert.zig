@@ -103,7 +103,7 @@ test "extensions iterator" {
     var pem = try cert_decoder.decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
-    const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
+    const rsa = try sshcrypto.cert.Rsa.from_pem(&pem.data);
 
     var it = rsa.extensions.iter();
 
@@ -122,7 +122,7 @@ test "extensions to bitflags" {
         .decode(@embedFile("rsa-cert.pub"));
     defer pem.deinit();
 
-    const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
+    const rsa = try sshcrypto.cert.Rsa.from_pem(&pem.data);
 
     try expect_equal(
         try rsa.extensions.to_bitflags(),
@@ -145,7 +145,7 @@ test "multiple valid principals iterator" {
     var pem = try cert_decoder.decode(@embedFile("multiple-principals-cert.pub"));
     defer pem.deinit();
 
-    const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
+    const rsa = try sshcrypto.cert.Rsa.from_pem(&pem.data);
 
     var it = rsa.valid_principals.iter();
 
@@ -163,7 +163,7 @@ test "critical options iterator" {
     var pem = try cert_decoder.decode(@embedFile("force-command-cert.pub"));
     defer pem.deinit();
 
-    const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
+    const rsa = try sshcrypto.cert.Rsa.from_pem(&pem.data);
 
     var it = rsa.critical_options.iter();
 
@@ -193,7 +193,7 @@ test "multiple critical options iterator" {
     var pem = try cert_decoder.decode(@embedFile("multiple-critical-options-cert.pub"));
     defer pem.deinit();
 
-    const rsa = try sshcrypto.cert.RSA.from_pem(&pem.data);
+    const rsa = try sshcrypto.cert.Rsa.from_pem(&pem.data);
 
     var it = rsa.critical_options.iter();
 
@@ -206,3 +206,5 @@ test "multiple critical options iterator" {
 
     try expect(it.done());
 }
+
+// TODO: Add tets for other certs types

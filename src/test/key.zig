@@ -9,7 +9,7 @@ test "Rsa public key" {
     const pem = try pub_key_decoder.decode(@embedFile("rsa-key.pub"));
     defer pem.deinit();
 
-    _ = try sshcrypto.key.public.RSA.from_pem(pem.data);
+    _ = try sshcrypto.key.public.Rsa.from_pem(pem.data);
     // TODO: Check fields
 }
 
@@ -17,7 +17,7 @@ test "Ecdsa public key" {
     const pem = try pub_key_decoder.decode(@embedFile("ecdsa-key.pub"));
     defer pem.deinit();
 
-    _ = try sshcrypto.key.public.ECDSA.from_pem(pem.data);
+    _ = try sshcrypto.key.public.Ecdsa.from_pem(pem.data);
     // TODO: Check fields
 }
 
@@ -25,7 +25,7 @@ test "ed25519 public key" {
     const pem = try pub_key_decoder.decode(@embedFile("ed25519-key.pub"));
     defer pem.deinit();
 
-    _ = try sshcrypto.key.public.ED25519.from_pem(pem.data);
+    _ = try sshcrypto.key.public.Ed25519.from_pem(pem.data);
     // TODO: Check fields
 }
 

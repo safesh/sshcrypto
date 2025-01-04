@@ -305,7 +305,7 @@ const Principals = struct {
     );
 };
 
-pub const RSA = struct {
+pub const Rsa = struct {
     magic: Magic,
     nonce: []const u8,
     e: []const u8, // TODO: mpint
@@ -324,20 +324,20 @@ pub const RSA = struct {
 
     const Self = @This();
 
-    fn from(src: []const u8) Error!RSA {
+    fn from(src: []const u8) Error!Rsa {
         return try proto.parse(Self, src);
     }
 
-    pub inline fn from_pem(pem: *const Pem) Error!RSA {
+    pub inline fn from_pem(pem: *const Pem) Error!Rsa {
         return try Self.from(pem.der);
     }
 
-    pub inline fn from_bytes(src: []const u8) Error!RSA {
+    pub inline fn from_bytes(src: []const u8) Error!Rsa {
         return try Self.from(src);
     }
 };
 
-pub const ECDSA = struct {
+pub const Ecdsa = struct {
     magic: Magic,
     nonce: []const u8,
     curve: []const u8,
@@ -356,20 +356,20 @@ pub const ECDSA = struct {
 
     const Self = @This();
 
-    fn from(src: []const u8) Error!ECDSA {
+    fn from(src: []const u8) Error!Ecdsa {
         return try proto.parse(Self, src);
     }
 
-    pub inline fn from_pem(pem: *const Pem) Error!ECDSA {
+    pub inline fn from_pem(pem: *const Pem) Error!Ecdsa {
         return try Self.from(pem.der);
     }
 
-    pub inline fn from_bytes(src: []const u8) Error!ECDSA {
+    pub inline fn from_bytes(src: []const u8) Error!Ecdsa {
         return try Self.from(src);
     }
 };
 
-pub const ED25519 = struct {
+pub const Ec25519 = struct {
     magic: Magic,
     nonce: []const u8,
     pk: []const u8,
@@ -387,23 +387,23 @@ pub const ED25519 = struct {
 
     const Self = @This();
 
-    fn from(src: []const u8) Error!ED25519 {
+    fn from(src: []const u8) Error!Ec25519 {
         return try proto.parse(Self, src);
     }
 
-    pub inline fn from_pem(pem: *const Pem) Error!ED25519 {
+    pub inline fn from_pem(pem: *const Pem) Error!Ec25519 {
         return try Self.from(pem.der);
     }
 
-    pub inline fn from_bytes(src: []const u8) Error!ED25519 {
+    pub inline fn from_bytes(src: []const u8) Error!Ec25519 {
         return try Self.from(src);
     }
 };
 
 pub const Cert = union(enum) {
-    rsa: RSA,
-    ecdsa: ECDSA,
-    ed25519: ED25519,
+    rsa: Rsa,
+    ecdsa: Ecdsa,
+    ed25519: Ec25519,
 
     const Self = @This();
 
@@ -416,15 +416,15 @@ pub const Cert = union(enum) {
             .ssh_rsa,
             .rsa_sha2_256,
             .rsa_sha2_512,
-            => .{ .rsa = try RSA.from_pem(pem) },
+            => .{ .rsa = try Rsa.from_pem(pem) },
 
             .ecdsa_sha2_nistp256,
             .ecdsa_sha2_nistp384,
             .ecdsa_sha2_nistp521,
-            => .{ .ecdsa = try ECDSA.from_pem(pem) },
+            => .{ .ecdsa = try Ecdsa.from_pem(pem) },
 
             .ssh_ed25519,
-            => .{ .ed25519 = try ED25519.from_pem(pem) },
+            => .{ .ed25519 = try Ec25519.from_pem(pem) },
 
             else => @panic("DSA certificates are not supported"),
         };

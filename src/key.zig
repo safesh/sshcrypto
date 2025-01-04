@@ -56,63 +56,63 @@ pub const public = struct {
         }
     };
 
-    pub const RSA = struct {
+    pub const Rsa = struct {
         magic: Magic,
         e: []const u8, // TODO: mpint
         n: []const u8, // TODO: mpint
 
         const Self = @This();
 
-        fn from(src: []const u8) Error!RSA {
+        fn from(src: []const u8) Error!Rsa {
             return try proto.parse(Self, src);
         }
 
-        pub inline fn from_bytes(src: []const u8) Error!RSA {
+        pub inline fn from_bytes(src: []const u8) Error!Rsa {
             return try Self.from(src);
         }
 
-        pub inline fn from_pem(pem: Pem) Error!RSA {
+        pub inline fn from_pem(pem: Pem) Error!Rsa {
             // XXX: Check if PEM magic matches what we got from the DER
             return try Self.from(pem.der);
         }
     };
 
-    pub const ECDSA = struct {
+    pub const Ecdsa = struct {
         magic: Magic,
         nonce: []const u8,
         curve: []const u8,
 
         const Self = @This();
 
-        fn from(src: []const u8) Error!ECDSA {
+        fn from(src: []const u8) Error!Ecdsa {
             return try proto.parse(Self, src);
         }
 
-        pub inline fn from_bytes(src: []const u8) Error!ECDSA {
+        pub inline fn from_bytes(src: []const u8) Error!Ecdsa {
             return try Self.from(src);
         }
 
-        pub inline fn from_pem(pem: Pem) Error!ECDSA {
+        pub inline fn from_pem(pem: Pem) Error!Ecdsa {
             // XXX: Check if PEM magic matches what we got from the DER
             return try Self.from(pem.der);
         }
     };
 
-    pub const ED25519 = struct {
+    pub const Ed25519 = struct {
         magic: Magic,
         pk: []const u8,
 
         const Self = @This();
 
-        fn from(src: []const u8) Error!ED25519 {
+        fn from(src: []const u8) Error!Ed25519 {
             return try proto.parse(Self, src);
         }
 
-        pub inline fn from_bytes(src: []const u8) Error!ED25519 {
+        pub inline fn from_bytes(src: []const u8) Error!Ed25519 {
             return try Self.from(src);
         }
 
-        pub inline fn from_pem(pem: Pem) Error!ED25519 {
+        pub inline fn from_pem(pem: Pem) Error!Ed25519 {
             // XXX: Check if PEM magic matches what we got from the DER
             return try Self.from(pem.der);
         }
@@ -274,7 +274,7 @@ pub const private = struct {
             @as(u32, @truncate(checksum));
     }
 
-    pub fn AnyKey(comptime Pub: type, comptime Pri: type) type {
+    pub fn PrivateKey(comptime Pub: type, comptime Pri: type) type {
         return struct {
             magic: Magic,
             cipher: Cipher,
@@ -367,7 +367,7 @@ pub const private = struct {
         };
     }
 
-    pub const Rsa = private.AnyKey(public.RSA, struct {
+    pub const Rsa = private.PrivateKey(public.Rsa, struct {
         checksum: u64,
         kind: []const u8,
         // Public key parts
@@ -396,7 +396,7 @@ pub const private = struct {
         }
     });
 
-    pub const Ecdsa = private.AnyKey(public.ECDSA, struct {
+    pub const Ecdsa = private.PrivateKey(public.Ecdsa, struct {
         checksum: u64,
         kind: []const u8,
         // Public parts
@@ -422,7 +422,7 @@ pub const private = struct {
         }
     });
 
-    pub const Ed25519 = private.AnyKey(public.ED25519, struct {
+    pub const Ed25519 = private.PrivateKey(public.Ed25519, struct {
         checksum: u64,
         kind: []const u8,
         // Public parts
