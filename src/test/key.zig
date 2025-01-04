@@ -45,12 +45,13 @@ test "Rsa private key: get_private_key" {
     const pem = try key_decoder.decode(@embedFile("rsa-key"));
     defer pem.deinit();
 
-    const key = try sshcrypto.key.private.RSA.from_pem(pem.data);
+    const key = try sshcrypto.key.private.Rsa.from_pem(pem.data);
 
     const private_key = try key.get_private_key(std.testing.allocator, null);
 
     try std.testing.expectEqualSlices(u8, private_key.data.kind, "ssh-rsa");
     try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@locahost"); // FIXME: Fix typo
+
     // TODO: Check other fields
 }
 
@@ -58,7 +59,7 @@ test "rsa private key with passphrase" {
     const pem = try key_decoder.decode(@embedFile("rsa-key-123"));
     defer pem.deinit();
 
-    const key = try sshcrypto.key.private.RSA.from_pem(pem.data);
+    const key = try sshcrypto.key.private.Rsa.from_pem(pem.data);
 
     var private_key = try key.get_private_key(std.testing.allocator, "123");
     defer private_key.deinit();

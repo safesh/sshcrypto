@@ -274,118 +274,6 @@ pub const private = struct {
             @as(u32, @truncate(checksum));
     }
 
-    pub const RSA = struct {
-        magic: Magic,
-        cipher: Cipher,
-        kdf_name: []const u8,
-        kdf: Kdf, // TODO: Make this optional
-        number_of_keys: u32,
-        public_key_blob: []const u8,
-        private_key_blob: []const u8,
-
-        const Self = @This();
-
-        pub const Key = struct {
-            checksum: u64,
-            kind: []const u8,
-            // Public key parts
-            n: []const u8,
-            e: []const u8,
-            // Private key parts
-            d: []const u8,
-            i: []const u8,
-            p: []const u8,
-            q: []const u8,
-            comment: []const u8,
-            _pad: proto.Padding,
-
-            pub fn check_checksum(self: *const Key) bool {
-                return private.check_checksum(self.checksum);
-            }
-
-            fn from(src: []const u8) Error!Key {
-                const key = try proto.parse(Key, src);
-
-                if (!key.check_checksum()) return error.InvalidChecksum;
-
-                return key;
-            }
-        };
-
-        pub fn get_public_key(self: *const Self) !public.RSA {
-            return public.RSA.from(self.public_key_blob);
-        }
-
-        /// Returns `true` if the `private_key_blob` is encrypted, i.e., cipher.name != "none"
-        pub inline fn is_encrypted(self: *const Self) bool {
-            return !std.mem.eql(u8, self.cipher.name, "none");
-        }
-
-        pub fn get_private_key(
-            self: *const Self,
-            allocator: std.mem.Allocator,
-            passphrase: ?[]const u8,
-        ) !Managed(Key) {
-            if (self.is_encrypted() and passphrase == null)
-                return error.MissingPassphrase;
-
-            // TODO: Make this generic.
-            if (std.mem.eql(u8, self.cipher.name, "aes256-ctr")) {
-                const out = try allocator.alloc(u8, self.private_key_blob.len);
-                errdefer allocator.free(out);
-
-                var keyiv = std.mem.zeroes([32 + 32]u8);
-                errdefer std.crypto.secureZero(u8, &keyiv);
-
-                try std.crypto.pwhash.bcrypt.pbkdf(
-                    passphrase.?,
-                    self.kdf.salt,
-                    &keyiv,
-                    self.kdf.rounds,
-                );
-
-                const fixed_keyiv = Kdf.intersperse_key(&keyiv);
-
-                const key: [32]u8 = fixed_keyiv[0..32].*;
-                const iv: [16]u8 = fixed_keyiv[32..48].*;
-
-                const ctx = std.crypto.core.aes.Aes256.initEnc(key);
-                std.crypto.core.modes.ctr(
-                    std.crypto.core.aes.AesEncryptCtx(std.crypto.core.aes.Aes256),
-                    ctx,
-                    out,
-                    self.private_key_blob,
-                    iv,
-                    std.builtin.Endian.big,
-                );
-
-                return .{
-                    .allocator = allocator,
-                    .ref = out,
-                    .data = try Key.from(out),
-                };
-            }
-
-            return .{
-                .allocator = null,
-                .ref = undefined,
-                .data = try Key.from(self.private_key_blob),
-            };
-        }
-
-        fn from(src: []const u8) Error!RSA {
-            return try proto.parse(Self, src);
-        }
-
-        pub inline fn from_bytes(src: []const u8) Error!RSA {
-            return try Self.from(src);
-        }
-
-        pub inline fn from_pem(pem: Pem) Error!RSA {
-            return try Self.from(pem.der);
-        }
-    };
-
     pub fn AnyKey(comptime Pub: type, comptime Pri: type) type {
         return struct {
             magic: Magic,
@@ -479,61 +367,6 @@ pub const private = struct {
         };
     }
 
-    pub const ED25519 = struct {
-        magic: Magic,
-        cipher: Cipher,
-        kdf_name: []const u8,
-        kdf: Kdf, // TODO: Make this optional
-        number_of_keys: u32,
-        public_key_blob: []const u8,
-        private_key_blob: []const u8,
-
-        const Self = @This();
-
-        pub const Key = struct {
-            checksum: u64,
-            kind: []const u8,
-            // Public key parts
-            pk: []const u8,
-            // Private key parts
-            sk: []const u8,
-            comment: []const u8,
-            _pad: proto.Padding,
-
-            pub fn check_checksum(self: *const Key) bool {
-                return private.check_checksum(self.checksum);
-            }
-
-            fn from(src: []const u8) Error!Key {
-                const key = try proto.parse(Key, src);
-
-                if (!key.check_checksum()) return error.InvalidChecksum;
-
-                return key;
-            }
-        };
-
-        pub fn get_public_key(self: *const Self) !public.ED25519 {
-            return public.ED25519.from(self.public_key_blob);
-        }
-
-        pub fn get_private_key(self: *const Self) !Key {
-            return Key.from(self.private_key_blob);
-        }
-
-        fn from(src: []const u8) Error!ED25519 {
-            return try proto.parse(Self, src);
-        }
-
-        pub inline fn from_bytes(src: []const u8) Error!ED25519 {
-            return try Self.from(src);
-        }
-
-        pub inline fn from_pem(pem: Pem) Error!ED25519 {
-            return try Self.from(pem.der);
-        }
-    };
-
     pub const Rsa = private.AnyKey(public.RSA, struct {
         checksum: u64,
         kind: []const u8,
@@ -550,18 +383,41 @@ pub const private = struct {
 
         const Self = @This();
 
-        pub fn check_checksum(self: *const Self) bool {
-            return private.check_checksum(self.checksum);
-        }
-
-        pub fn form_bytes(src: []const u8) Error!@This() {
+        pub inline fn from_bytes(src: []const u8) Error!Self {
             return @This().from(src);
         }
 
-        inline fn from(src: []const u8) Error!@This() {
-            const key = try proto.parse(@This(), src);
+        fn from(src: []const u8) Error!@This() {
+            const key = try proto.parse(Self, src);
 
-            if (!key.check_checksum()) return error.InvalidChecksum;
+            if (!private.check_checksum(key.checksum)) return error.InvalidChecksum;
+
+            return key;
+        }
+    });
+
+    pub const Ecdsa = private.AnyKey(public.ECDSA, struct {
+        checsum: u64,
+        kind: []const u8,
+        // Public parts
+        nonce: []const u8,
+        curve: []const u8,
+        // Private parts
+        q: []const u8,
+        d: []const u8,
+        comment: []const u8,
+        _pad: proto.Padding,
+
+        const Self = @This();
+
+        pub inline fn from_bytes(src: []const u8) Error!Self {
+            return @This().from(src);
+        }
+
+        fn from(src: []const u8) Error!Self {
+            const key = try proto.parse(Self, src);
+
+            if (!private.check_checksum(key.checksum)) return error.InvalidChecksum;
 
             return key;
         }
@@ -570,27 +426,23 @@ pub const private = struct {
     pub const Ed25519 = private.AnyKey(public.ED25519, struct {
         checksum: u64,
         kind: []const u8,
-        // Public key parts
+        // Public parts
         pk: []const u8,
-        // Private key parts
+        // Private parts
         sk: []const u8,
         comment: []const u8,
         _pad: proto.Padding,
 
         const Self = @This();
 
-        pub fn check_checksum(self: *const Self) bool {
-            return private.check_checksum(self.checksum);
-        }
-
-        pub fn from_bytes(src: []const u8) Error!Self {
+        pub inline fn from_bytes(src: []const u8) Error!Self {
             return @This().from(src);
         }
 
         fn from(src: []const u8) Error!Self {
             const key = try proto.parse(Self, src);
 
-            if (!key.check_checksum()) return error.InvalidChecksum;
+            if (!private.check_checksum(key.checksum)) return error.InvalidChecksum;
 
             return key;
         }
