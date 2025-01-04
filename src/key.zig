@@ -397,14 +397,13 @@ pub const private = struct {
     });
 
     pub const Ecdsa = private.AnyKey(public.ECDSA, struct {
-        checsum: u64,
+        checksum: u64,
         kind: []const u8,
         // Public parts
         nonce: []const u8,
         curve: []const u8,
         // Private parts
-        q: []const u8,
-        d: []const u8,
+        sk: []const u8,
         comment: []const u8,
         _pad: proto.Padding,
 

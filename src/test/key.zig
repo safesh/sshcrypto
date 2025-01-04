@@ -128,6 +128,32 @@ test "ed25519 private key with long comment" {
     try std.testing.expectEqualSlices(u8, expected, private_key.data.comment);
 }
 
+test "Ecdsa private key" {
+    const pem = try key_decoder.decode(@embedFile("ecdsa-key"));
+    defer pem.deinit();
+
+    const key = try sshcrypto.key.private.Ecdsa.from_pem(pem.data);
+
+    const private_key = try key.get_private_key(std.testing.allocator, null);
+
+    try std.testing.expectEqualSlices(u8, private_key.data.kind, "ecdsa-sha2-nistp256");
+    try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@locahost");
+    // TODO: check other fields
+}
+
+test "Ecdsa private key with passphrase" {
+    const pem = try key_decoder.decode(@embedFile("ecdsa-key"));
+    defer pem.deinit();
+
+    const key = try sshcrypto.key.private.Ecdsa.from_pem(pem.data);
+
+    var private_key = try key.get_private_key(std.testing.allocator, "123");
+    defer private_key.deinit();
+
+    try std.testing.expectEqualSlices(u8, private_key.data.kind, "ecdsa-sha2-nistp256");
+    try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@locahost");
+}
+
 // test "supported chipers" {
 //     for (sshcrypto.key.private.Cipher.get_supported_ciphers()) |cipher| {
 //         std.debug.print("{s}\n", .{cipher});
