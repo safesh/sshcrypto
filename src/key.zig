@@ -3,15 +3,17 @@ const std = @import("std");
 const proto = @import("proto.zig");
 
 pub const Error = error{
-    /// This indicates, either, PEM corruption, or key corruption.
+    /// This indicates, either: PEM corruption, DER corruption, or an
+    /// unsupported magic string.
     InvalidMagicString,
-    /// The checksum for private keys is invalid, meaning either,
-    /// decryption was not successful, or data is corrupted. This is NOT an auth
-    /// form error.
+    /// The checksum for private keys is invalid, meaning either, decryption
+    /// was not successful, or data is corrupted. This is NOT an auth form
+    /// error.
     InvalidChecksum,
-} || proto.Error;
+} || proto.Error || std.mem.Allocator.Error;
 
 pub const public = struct {
+    /// NOTE: DSA keys are not supported
     pub const Magic = enum(u3) {
         ssh_rsa,
         ecdsa_sha2_nistp256,
@@ -23,7 +25,7 @@ pub const public = struct {
 
         const strings = proto.enum_to_str(Self, "");
 
-        pub fn as_string(self: *const Self) []const u8 {
+        pub inline fn as_string(self: *const Self) []const u8 {
             return strings[@intFromEnum(self.*)];
         }
 
@@ -122,19 +124,15 @@ pub const public = struct {
 pub const private = struct {
     pub fn Managed(comptime T: type) type {
         return struct {
-            allocator: ?std.mem.Allocator,
+            allocator: std.mem.Allocator,
             ref: []u8,
             data: T,
 
             const Self = @This();
 
             pub fn deinit(self: *Self) void {
-                // NOTE: Not so sure if this makes any sense, but it's better
-                // not to leak this memory
-                if (self.allocator) |allocator| {
-                    std.crypto.secureZero(u8, self.ref);
-                    allocator.free(self.ref);
-                }
+                std.crypto.secureZero(u8, self.ref);
+                self.allocator.free(self.ref);
             }
         };
     }
@@ -146,7 +144,7 @@ pub const private = struct {
 
         const strings = proto.enum_to_str(Self, "");
 
-        pub fn as_string(self: *const Self) []const u8 {
+        pub inline fn as_string(self: *const Self) []const u8 {
             return strings[@intFromEnum(self.*)];
         }
 
@@ -167,16 +165,62 @@ pub const private = struct {
         }
     };
 
+    pub fn decrypt_aes_256_ctr(
+        allocator: std.mem.Allocator,
+        private_key_blob: []const u8,
+        kdf: *const Kdf,
+        passphrase: []const u8,
+    ) Error![]u8 {
+        const KEYLEN: u32 = 32;
+        const IVLEN: u32 = 16;
+
+        const out = try allocator.alloc(u8, private_key_blob.len);
+        errdefer allocator.free(out);
+
+        var keyiv = std.mem.zeroes([KEYLEN + IVLEN]u8);
+        defer std.crypto.secureZero(u8, &keyiv);
+
+        std.crypto.pwhash.bcrypt.opensshKdf(
+            passphrase,
+            kdf.salt,
+            &keyiv,
+            kdf.rounds,
+        ) catch return Error.InvalidData; // FIXME;
+
+        const ctx = std.crypto.core.aes.Aes256.initEnc(keyiv[0..KEYLEN].*);
+        std.crypto.core.modes.ctr(
+            std.crypto.core.aes.AesEncryptCtx(std.crypto.core.aes.Aes256),
+            ctx,
+            out,
+            private_key_blob,
+            keyiv[KEYLEN..keyiv.len].*,
+            std.builtin.Endian.big,
+        );
+
+        return out;
+    }
+
+    pub fn decrypt_none(allocator: std.mem.Allocator, private_key_blob: []const u8, _: *const Kdf, _: []const u8) Error![]u8 {
+        const out = try allocator.alloc(u8, private_key_blob.len);
+        errdefer allocator.free(out);
+
+        @memcpy(out, private_key_blob);
+
+        return out;
+    }
+
     pub const Cipher = struct {
         name: []const u8,
-        block_size: u32,
-        key_len: u32,
-        iv_len: u32,
-        auth_len: u32,
+        decrypt: *const fn (
+            allocator: std.mem.Allocator,
+            private_key_blob: []const u8,
+            kdf: *const Kdf,
+            passphrase: []const u8,
+        ) Error![]u8,
 
         const Self = @This();
 
-        const ciphers = [_]Self{
+        pub const ciphers = [_]Self{
             // Taken from openssl-portable
             // TODO: Add OpenSSL ciphers
             // .{ "openssl-3des-cbc", 8, 24, 0, 0 },
@@ -188,11 +232,11 @@ pub const private = struct {
             // .{ "openssl-aes256-ctr", 16, 32, 0, 0 },
             // .{ "openssl-aes128-gcm@openssh.com", 16, 16, 12, 16 },
             // .{ "openssl-aes256-gcm@openssh.com", 16, 32, 12, 16 },
-            .{ .name = "aes128-ctr", .block_size = 16, .key_len = 16, .iv_len = 0, .auth_len = 0 },
-            .{ .name = "aes192-ctr", .block_size = 16, .key_len = 24, .iv_len = 0, .auth_len = 0 },
-            .{ .name = "aes256-ctr", .block_size = 16, .key_len = 32, .iv_len = 0, .auth_len = 0 },
-            .{ .name = "chacha20-poly1305@openssh.com", .block_size = 8, .key_len = 64, .iv_len = 0, .auth_len = 16 },
-            .{ .name = "none", .block_size = 8, .key_len = 0, .iv_len = 0, .auth_len = 0 },
+            // .{ .name = "aes128-ctr", .block_size = 16, .key_len = 16, .iv_len = 0, .auth_len = 0 },
+            // .{ .name = "aes192-ctr", .block_size = 16, .key_len = 24, .iv_len = 0, .auth_len = 0 },
+            .{ .name = "aes256-ctr", .decrypt = &decrypt_aes_256_ctr },
+            // .{ .name = "chacha20-poly1305@openssh.com", .block_size = 8, .key_len = 64, .iv_len = 0, .auth_len = 16 },
+            .{ .name = "none", .decrypt = &decrypt_none },
         };
 
         pub fn get_supported_ciphers() [ciphers.len][]const u8 {
@@ -211,7 +255,7 @@ pub const private = struct {
         pub inline fn parse(src: []const u8) proto.Error!proto.Cont(Cipher) {
             const next, const name = try proto.rfc4251.parse_string(src);
 
-            for (Self.ciphers) |cipher| {
+            inline for (comptime Self.ciphers) |cipher| {
                 if (std.mem.eql(u8, name, cipher.name)) {
                     return .{ next, cipher };
                 }
@@ -247,25 +291,6 @@ pub const private = struct {
                 return .{ next, undefined };
 
             return .{ next, try proto.parse(Self, kdf) };
-        }
-
-        // NOTE: Hack while we wait for zig
-        pub inline fn intersperse_key(keyiv: []u8) []u8 {
-            var tmp = std.mem.zeroes([48]u8);
-            defer std.crypto.secureZero(u8, &tmp);
-
-            @memcpy(tmp[0..24], keyiv[0..24]);
-            @memcpy(tmp[24..], keyiv[32..56]);
-
-            var i: u32 = 0;
-            for (tmp[0..24], tmp[24..]) |p, q| {
-                keyiv[i] = p;
-                keyiv[i + 1] = q;
-
-                i += 2;
-            }
-
-            return keyiv[0..48];
         }
     };
 
@@ -310,47 +335,24 @@ pub const private = struct {
                 if (self.is_encrypted() and passphrase == null)
                     return error.MissingPassphrase;
 
-                if (std.mem.eql(u8, self.cipher.name, "aes256-ctr")) {
-                    const out = try allocator.alloc(u8, self.private_key_blob.len);
-                    errdefer allocator.free(out);
+                inline for (comptime private.Cipher.ciphers) |cipher| {
+                    if (std.mem.eql(u8, cipher.name, self.cipher.name)) {
+                        const private_blob = try cipher.decrypt(
+                            allocator,
+                            self.private_key_blob,
+                            &self.kdf,
+                            passphrase orelse undefined,
+                        );
 
-                    var keyiv = std.mem.zeroes([32 + 32]u8);
-                    errdefer std.crypto.secureZero(u8, &keyiv);
-
-                    try std.crypto.pwhash.bcrypt.pbkdf(
-                        passphrase.?,
-                        self.kdf.salt,
-                        &keyiv,
-                        self.kdf.rounds,
-                    );
-
-                    const fixed_keyiv = Kdf.intersperse_key(&keyiv);
-
-                    const key: [32]u8 = fixed_keyiv[0..32].*;
-                    const iv: [16]u8 = fixed_keyiv[32..48].*;
-
-                    const ctx = std.crypto.core.aes.Aes256.initEnc(key);
-                    std.crypto.core.modes.ctr(
-                        std.crypto.core.aes.AesEncryptCtx(std.crypto.core.aes.Aes256),
-                        ctx,
-                        out,
-                        self.private_key_blob,
-                        iv,
-                        std.builtin.Endian.big,
-                    );
-
-                    return .{
-                        .allocator = allocator,
-                        .ref = out,
-                        .data = try Pri.from_bytes(out),
-                    };
+                        return .{
+                            .allocator = allocator,
+                            .ref = private_blob,
+                            .data = try Pri.from_bytes(private_blob),
+                        };
+                    }
                 }
 
-                return .{
-                    .allocator = null,
-                    .ref = undefined, // FIXME: We should provider the ref
-                    .data = try Pri.from_bytes(self.private_key_blob),
-                };
+                unreachable;
             }
 
             fn from(src: []const u8) Error!Self {

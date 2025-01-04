@@ -47,7 +47,8 @@ test "Rsa private key: get_private_key" {
 
     const key = try sshcrypto.key.private.Rsa.from_pem(pem.data);
 
-    const private_key = try key.get_private_key(std.testing.allocator, null);
+    var private_key = try key.get_private_key(std.testing.allocator, null);
+    defer private_key.deinit();
 
     try std.testing.expectEqualSlices(u8, private_key.data.kind, "ssh-rsa");
     try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@locahost"); // FIXME: Fix typo
@@ -77,7 +78,8 @@ test "Ed25519 private key: get_private_key" {
 
     const key = try sshcrypto.key.private.Ed25519.from_pem(pem.data);
 
-    const private_key = try key.get_private_key(std.testing.allocator, null);
+    var private_key = try key.get_private_key(std.testing.allocator, null);
+    defer private_key.deinit();
 
     try std.testing.expectEqualSlices(u8, private_key.data.kind, "ssh-ed25519");
     try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@locahost");
@@ -121,7 +123,8 @@ test "ed25519 private key with long comment" {
 
     const key = try sshcrypto.key.private.Ed25519.from_pem(pem.data);
 
-    const private_key = try key.get_private_key(std.testing.allocator, null);
+    var private_key = try key.get_private_key(std.testing.allocator, null);
+    defer private_key.deinit();
 
     const expected = "This is a long comment with spaces in between, OpenSSH really does allow anything here...";
 
@@ -134,7 +137,8 @@ test "Ecdsa private key" {
 
     const key = try sshcrypto.key.private.Ecdsa.from_pem(pem.data);
 
-    const private_key = try key.get_private_key(std.testing.allocator, null);
+    var private_key = try key.get_private_key(std.testing.allocator, null);
+    defer private_key.deinit();
 
     try std.testing.expectEqualSlices(u8, private_key.data.kind, "ecdsa-sha2-nistp256");
     try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@locahost");
@@ -142,7 +146,7 @@ test "Ecdsa private key" {
 }
 
 test "Ecdsa private key with passphrase" {
-    const pem = try key_decoder.decode(@embedFile("ecdsa-key"));
+    const pem = try key_decoder.decode(@embedFile("ecdsa-key-123"));
     defer pem.deinit();
 
     const key = try sshcrypto.key.private.Ecdsa.from_pem(pem.data);
@@ -151,7 +155,8 @@ test "Ecdsa private key with passphrase" {
     defer private_key.deinit();
 
     try std.testing.expectEqualSlices(u8, private_key.data.kind, "ecdsa-sha2-nistp256");
-    try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@locahost");
+    try std.testing.expectEqualSlices(u8, private_key.data.comment, "root@localhost");
+    // TODO: check other fields
 }
 
 // test "supported chipers" {
